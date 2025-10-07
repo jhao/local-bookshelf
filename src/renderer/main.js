@@ -416,6 +416,204 @@ const state = {
   settings: { ...initialSettings }
 };
 
+const persistence = {
+  hydrating: true,
+  hydrated: false,
+  pending: null,
+  timeout: null,
+  lastSerialized: null
+};
+
+function serializeState() {
+  const preferences = {};
+  Object.entries(state.preferences || {}).forEach(([collectionId, preference]) => {
+    preferences[collectionId] = {
+      ...preference,
+      selected: Array.from(preference.selected || [])
+    };
+  });
+
+  const bookmarks = {};
+  Object.entries(state.bookmarks || {}).forEach(([bookId, entries]) => {
+    bookmarks[bookId] = Array.from(entries || []);
+  });
+
+  const collectionBooks = {};
+  Object.entries(state.collectionBooks || {}).forEach(([collectionId, books]) => {
+    collectionBooks[collectionId] = deepCloneBooks(books);
+  });
+
+  return {
+    version: 1,
+    locale: state.locale,
+    userCollections: JSON.parse(JSON.stringify(state.userCollections || [])),
+    collectionOverrides: JSON.parse(JSON.stringify(state.collectionOverrides || {})),
+    collectionMeta: JSON.parse(JSON.stringify(state.collectionMeta || {})),
+    collectionBooks,
+    preferences,
+    bookmarks,
+    previewStates: JSON.parse(JSON.stringify(state.previewStates || {})),
+    settings: JSON.parse(JSON.stringify(state.settings || {})),
+    ttsState: JSON.parse(JSON.stringify(state.ttsState || {})),
+    exportState: JSON.parse(JSON.stringify(state.exportState || {})),
+    aiSessions: JSON.parse(JSON.stringify(state.aiSessions || {})),
+    selectedCollectionId: state.selectedCollectionId,
+    selectedBookId: state.selectedBookId
+  };
+}
+
+function applyPersistedState(persisted) {
+  if (!persisted || typeof persisted !== 'object') {
+    return;
+  }
+  if (persisted.locale && translations[persisted.locale]) {
+    state.locale = persisted.locale;
+  }
+  if (Array.isArray(persisted.userCollections)) {
+    state.userCollections = JSON.parse(JSON.stringify(persisted.userCollections));
+  }
+  if (persisted.collectionOverrides) {
+    state.collectionOverrides = {
+      ...state.collectionOverrides,
+      ...JSON.parse(JSON.stringify(persisted.collectionOverrides))
+    };
+  }
+  if (persisted.collectionMeta) {
+    state.collectionMeta = {
+      ...state.collectionMeta,
+      ...JSON.parse(JSON.stringify(persisted.collectionMeta))
+    };
+  }
+  if (persisted.collectionBooks) {
+    Object.entries(persisted.collectionBooks).forEach(([collectionId, books]) => {
+      state.collectionBooks[collectionId] = deepCloneBooks(books);
+    });
+  }
+  if (persisted.preferences) {
+    state.preferences = {};
+    Object.entries(persisted.preferences).forEach(([collectionId, preference]) => {
+      state.preferences[collectionId] = {
+        ...preference,
+        selected: new Set(preference.selected || [])
+      };
+    });
+  }
+  if (persisted.bookmarks) {
+    Object.entries(persisted.bookmarks).forEach(([bookId, entries]) => {
+      state.bookmarks[bookId] = new Set(entries || []);
+    });
+  }
+  if (persisted.previewStates) {
+    state.previewStates = { ...state.previewStates, ...persisted.previewStates };
+  }
+  if (persisted.settings) {
+    state.settings = { ...state.settings, ...persisted.settings };
+  }
+  if (persisted.ttsState) {
+    state.ttsState = { ...state.ttsState, ...persisted.ttsState };
+  }
+  if (persisted.exportState) {
+    state.exportState = { ...state.exportState, ...persisted.exportState };
+  }
+  if (persisted.aiSessions) {
+    state.aiSessions = persisted.aiSessions;
+  }
+  if (persisted.selectedCollectionId) {
+    state.selectedCollectionId = persisted.selectedCollectionId;
+  }
+  if (persisted.selectedBookId) {
+    state.selectedBookId = persisted.selectedBookId;
+  }
+}
+
+function schedulePersist(force = false) {
+  if (persistence.hydrating || !persistence.hydrated || !window.api?.saveState) {
+    return;
+  }
+  const data = serializeState();
+  const serialized = JSON.stringify(data);
+  if (!force && serialized === persistence.lastSerialized) {
+    return;
+  }
+
+  const flush = () => {
+    persistence.lastSerialized = serialized;
+    window.api
+      .saveState(data)
+      .catch((error) => console.error('Failed to persist state', error));
+  };
+
+  if (force) {
+    if (persistence.timeout) {
+      clearTimeout(persistence.timeout);
+      persistence.timeout = null;
+    }
+    flush();
+    return;
+  }
+
+  persistence.pending = { data, serialized };
+  if (persistence.timeout) {
+    clearTimeout(persistence.timeout);
+  }
+  persistence.timeout = setTimeout(() => {
+    if (!persistence.pending) {
+      return;
+    }
+    const payload = persistence.pending;
+    persistence.pending = null;
+    persistence.timeout = null;
+    persistence.lastSerialized = payload.serialized;
+    window.api
+      .saveState(payload.data)
+      .catch((error) => console.error('Failed to persist state', error));
+  }, 350);
+}
+
+async function requestDirectory(defaultPath = '', fallbackPrompt = '') {
+  if (window.api?.selectDirectory) {
+    try {
+      const selected = await window.api.selectDirectory(defaultPath);
+      if (selected) {
+        return selected;
+      }
+    } catch (error) {
+      console.error('Directory selection failed', error);
+    }
+  }
+  if (!fallbackPrompt) {
+    return null;
+  }
+  const manual = window.prompt(fallbackPrompt, defaultPath || '');
+  if (manual && manual.trim()) {
+    return manual.trim();
+  }
+  return null;
+}
+
+async function initializeApp() {
+  try {
+    if (window.api?.loadState) {
+      const persisted = await window.api.loadState();
+      applyPersistedState(persisted);
+      if (state.selectedCollectionId) {
+        ensurePreferences(state.selectedCollectionId);
+        const books = getBooks(state.selectedCollectionId);
+        if (state.selectedBookId && !books.find((book) => book.id === state.selectedBookId)) {
+          state.selectedBookId = books[0]?.id || null;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to restore state', error);
+  } finally {
+    persistence.hydrating = false;
+    renderApp();
+    persistence.hydrated = true;
+    schedulePersist(true);
+  }
+}
+
 function createElement(tag, options = {}) {
   const element = document.createElement(tag);
   if (options.className) {
@@ -2181,46 +2379,117 @@ function renderWizardOverlay(pack) {
   }
 
   if (state.wizardStep === 0) {
-    const pathList = createElement('div', { className: 'path-list' });
-    directoryOptions.forEach((option) => {
-      const label = createElement('label', { className: 'highlight-toggle' });
-      const input = createElement('input', { attributes: { type: 'checkbox' } });
-      input.checked = state.wizardData.paths.includes(option.path);
-      input.addEventListener('change', (event) => {
-        if (event.target.checked) {
-          if (!state.wizardData.paths.includes(option.path)) {
-            state.wizardData.paths.push(option.path);
-          }
-        } else {
-          state.wizardData.paths = state.wizardData.paths.filter((path) => path !== option.path);
+    const mutatePaths = (rawPath, options = {}) => {
+      const normalized = (rawPath || '').trim();
+      if (!normalized) {
+        return false;
+      }
+      const existingIndex = state.wizardData.paths.findIndex((entry) => entry === normalized);
+      if (typeof options.replaceIndex === 'number') {
+        if (existingIndex !== -1 && existingIndex !== options.replaceIndex) {
+          showToast(pack.wizard.duplicatePath);
+          return false;
         }
-      });
-      label.appendChild(input);
-      label.appendChild(
-        createElement('span', {
-          html: `<strong>${option.path}</strong><br /><small>${formatDate(option.lastIndexed)} · ${option.helper}</small>`
-        })
-      );
-      pathList.appendChild(label);
-    });
+        if (state.wizardData.paths[options.replaceIndex] === normalized) {
+          return false;
+        }
+        state.wizardData.paths.splice(options.replaceIndex, 1, normalized);
+      } else {
+        if (existingIndex !== -1) {
+          showToast(pack.wizard.duplicatePath);
+          return false;
+        }
+        state.wizardData.paths.push(normalized);
+      }
+      renderApp();
+      return true;
+    };
+
+    panel.appendChild(createElement('h5', { className: 'path-section-title', text: pack.wizard.selectedTitle }));
+
+    const pathList = createElement('div', { className: 'path-list' });
     if (!state.wizardData.paths.length) {
       pathList.appendChild(createElement('p', { className: 'wizard-helper', text: pack.wizard.emptyPathHelper }));
+    } else {
+      state.wizardData.paths.forEach((pathValue, index) => {
+        const row = createElement('div', { className: 'path-row' });
+        row.appendChild(createElement('span', { className: 'path-text', text: pathValue }));
+        const actions = createElement('div', { className: 'path-actions' });
+        const editButton = createElement('button', { className: 'ghost-button small', text: pack.wizard.editPath });
+        editButton.type = 'button';
+        editButton.addEventListener('click', async () => {
+          const selected = await requestDirectory(pathValue, pack.wizard.promptDirectory);
+          if (selected) {
+            mutatePaths(selected, { replaceIndex: index });
+          }
+        });
+        const removeButton = createElement('button', {
+          className: 'ghost-button small danger',
+          text: pack.wizard.removePath
+        });
+        removeButton.type = 'button';
+        removeButton.addEventListener('click', () => {
+          state.wizardData.paths.splice(index, 1);
+          renderApp();
+        });
+        actions.appendChild(editButton);
+        actions.appendChild(removeButton);
+        row.appendChild(actions);
+        pathList.appendChild(row);
+      });
     }
-    const customInput = createElement('input', {
-      attributes: { type: 'text', placeholder: pack.wizard.directoryPlaceholder }
-    });
-    const addButton = createElement('button', { className: 'ghost-button', text: pack.wizard.addPathButton });
-    addButton.type = 'button';
-    addButton.addEventListener('click', () => {
-      if (customInput.value.trim() && !state.wizardData.paths.includes(customInput.value.trim())) {
-        state.wizardData.paths.push(customInput.value.trim());
-        customInput.value = '';
-        renderApp();
+    panel.appendChild(pathList);
+
+    const browseButton = createElement('button', { className: 'ghost-button primary', text: pack.wizard.browseForPath });
+    browseButton.type = 'button';
+    browseButton.addEventListener('click', async () => {
+      const selected = await requestDirectory('', pack.wizard.promptDirectory);
+      if (selected) {
+        mutatePaths(selected);
       }
     });
-    panel.appendChild(pathList);
-    panel.appendChild(customInput);
-    panel.appendChild(addButton);
+    panel.appendChild(browseButton);
+
+    const manualRow = createElement('div', { className: 'path-manual-row' });
+    const manualInput = createElement('input', {
+      attributes: { type: 'text', placeholder: pack.wizard.directoryPlaceholder }
+    });
+    const manualButton = createElement('button', { className: 'ghost-button', text: pack.wizard.addPathButton });
+    manualButton.type = 'button';
+    manualButton.addEventListener('click', () => {
+      if (mutatePaths(manualInput.value)) {
+        manualInput.value = '';
+      }
+    });
+    manualRow.appendChild(manualInput);
+    manualRow.appendChild(manualButton);
+    panel.appendChild(manualRow);
+    panel.appendChild(createElement('p', { className: 'wizard-helper', text: pack.wizard.manualEntryHelper }));
+
+    if (directoryOptions.length) {
+      panel.appendChild(createElement('h5', { className: 'path-section-title', text: pack.wizard.suggestionsTitle }));
+      const suggestions = createElement('div', { className: 'path-suggestions' });
+      directoryOptions.forEach((option) => {
+        const suggestion = createElement('div', { className: 'path-suggestion' });
+        const info = createElement('div', { className: 'path-suggestion-info' });
+        info.appendChild(createElement('strong', { text: option.path }));
+        info.appendChild(
+          createElement('span', {
+            text: `${formatDate(option.lastIndexed)} · ${option.helper}`
+          })
+        );
+        const addSuggestion = createElement('button', {
+          className: 'ghost-button small',
+          text: pack.wizard.useSuggested
+        });
+        addSuggestion.type = 'button';
+        addSuggestion.addEventListener('click', () => mutatePaths(option.path));
+        suggestion.appendChild(info);
+        suggestion.appendChild(addSuggestion);
+        suggestions.appendChild(suggestion);
+      });
+      panel.appendChild(suggestions);
+    }
   } else if (state.wizardStep === 1) {
     const nameInput = createElement('input', { attributes: { type: 'text', value: state.wizardData.name } });
     nameInput.addEventListener('input', (event) => {
@@ -2332,8 +2601,9 @@ function renderApp() {
   if (toast) {
     root.appendChild(toast);
   }
+  schedulePersist();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  renderApp();
+  initializeApp();
 });
