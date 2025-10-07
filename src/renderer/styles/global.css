@@ -255,6 +255,33 @@ body {
   background: rgba(148, 163, 184, 0.2);
 }
 
+.ghost-button.small {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
+
+.ghost-button.primary {
+  background: linear-gradient(135deg, #38bdf8 0%, #6366f1 100%);
+  border-color: transparent;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.ghost-button.primary:hover {
+  background: linear-gradient(135deg, #22d3ee 0%, #818cf8 100%);
+  color: #0f172a;
+}
+
+.ghost-button.danger {
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #fca5a5;
+}
+
+.ghost-button.danger:hover {
+  background: rgba(248, 113, 113, 0.2);
+  color: #fee2e2;
+}
+
 .filters-panel {
   display: flex;
   flex-direction: column;
@@ -672,6 +699,86 @@ body {
   gap: 10px;
   max-height: 220px;
   overflow-y: auto;
+}
+
+.path-section-title {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #38bdf8;
+}
+
+.path-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.path-text {
+  flex: 1;
+  color: #e2e8f0;
+  word-break: break-all;
+}
+
+.path-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.path-manual-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.path-manual-row input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.7);
+  color: #f8fafc;
+}
+
+.path-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.path-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.path-suggestion-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #e2e8f0;
+}
+
+.path-suggestion-info strong {
+  font-size: 0.95rem;
+  color: #f8fafc;
+}
+
+.path-suggestion-info span {
+  font-size: 0.8rem;
+  color: #94a3b8;
 }
 
 .wizard-helper {
