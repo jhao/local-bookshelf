@@ -1,9 +1,8 @@
 export const translations = {
   en: {
     localeLabel: 'Language',
-    heroTitle: 'Local Bookshelf Experience Blueprint',
-    heroSubtitle:
-      'A bilingual reference UI that maps the Functional Specification into a tangible Electron + React layout skeleton.',
+    heroTitle: 'Local Library Management',
+    heroSubtitle: '',
     actionBar: {
       openSettings: 'Settings',
       toggleMonitor: 'Background Jobs'
@@ -21,7 +20,7 @@ export const translations = {
         id: 'new-collection',
         title: 'New Collection',
         description: 'Launch the creation wizard to add folders, metadata, and a custom cover.',
-        stats: 'Wizard · Drag & Drop Paths · Auto Scan',
+        stats: 'Wizard · Folder Picker · Auto Scan',
         actions: ['Start Wizard']
       },
       {
@@ -57,27 +56,21 @@ export const translations = {
     wizard: {
       title: 'New Collection Wizard',
       steps: [
-        { title: 'Choose Folders', helper: 'Drag and drop or pick directories that should be scanned.' },
+        { title: 'Choose Folders', helper: 'Pick directories for the collection using the folder picker.' },
         { title: 'Describe Collection', helper: 'Add a name and optional description for quick discovery.' },
         { title: 'Select Cover', helper: 'Upload a PNG, JPG, or WebP image that represents the shelf.' }
       ],
-      directoryPlaceholder: 'Add directories…',
-      browseForPath: 'Browse folders…',
-      addPathButton: 'Add Path',
+      browseForPath: 'Choose folders…',
       emptyPathHelper: 'No folders selected yet. Start with a handbook archive, downloads folder, or NAS share.',
       selectedTitle: 'Selected folders',
-      suggestionsTitle: 'Suggested locations',
-      useSuggested: 'Add this folder',
       editPath: 'Change…',
       removePath: 'Remove',
-      manualEntryHelper: 'Paste or type a folder path if you cannot browse to it.',
-      promptDirectory: 'Enter a folder path',
       duplicatePath: 'This folder has already been added.',
       nameLabel: 'Collection Name',
       descriptionLabel: 'Description',
       coverLabel: 'Cover Image',
       browseLabel: 'Browse…',
-      dropHint: 'Drop image here or use the file picker.',
+      dropHint: 'Use a 1280×720 image for best quality.',
       next: 'Next',
       back: 'Back',
       cancel: 'Cancel',
@@ -91,6 +84,34 @@ export const translations = {
       successTitle: 'Scan Started',
       successBody:
         'We are scanning your folders in the background. Progress appears in the job monitor and collection dashboard.'
+    },
+    scanOverlay: {
+      title: 'Scanning {name}',
+      subtitle: 'We are indexing your selected folders. Progress updates in real time.',
+      progressLabel: 'Progress',
+      statusLabel: 'Status',
+      status: {
+        queued: 'Waiting to start',
+        running: 'Scanning folders…',
+        completed: 'Scan complete'
+      },
+      pathsTitle: 'Folders being indexed',
+      logTitle: 'Activity log',
+      logs: {
+        empty: 'Waiting for the scanner to begin…',
+        queued: 'Job queued and pending worker availability.',
+        start: 'Started scanning {path}.',
+        discovery: 'Discovering folder structure and counting documents…',
+        metadata: 'Extracting metadata from supported formats…',
+        embeddings: 'Generating embeddings for AI answers…',
+        completed: 'Scan completed successfully.',
+        fallbackPath: 'selected folders'
+      },
+      buttons: {
+        home: 'Return home',
+        openCollection: 'Open collection'
+      },
+      fallbackName: 'collection'
     },
     monitor: {
       title: 'Background Jobs',
@@ -210,8 +231,8 @@ export const translations = {
   },
   zh: {
     localeLabel: '语言',
-    heroTitle: '本地书架体验蓝图',
-    heroSubtitle: '基于功能规格的双语界面雏形，展示 Electron + React 架构的核心布局。',
+    heroTitle: '本地图书管理',
+    heroSubtitle: '',
     actionBar: {
       openSettings: '系统设置',
       toggleMonitor: '后台任务'
@@ -229,7 +250,7 @@ export const translations = {
         id: 'new-collection',
         title: '创建新收藏集',
         description: '打开多步骤向导，添加文件夹、元数据与封面。',
-        stats: '向导 · 拖放路径 · 自动扫描',
+        stats: '向导 · 文件夹选择 · 自动扫描',
         actions: ['启动向导']
       },
       {
@@ -265,27 +286,21 @@ export const translations = {
     wizard: {
       title: '新建收藏集向导',
       steps: [
-        { title: '选择文件夹', helper: '拖放或选择需要扫描的目录。' },
+        { title: '选择文件夹', helper: '通过文件夹选择器挑选需要扫描的目录。' },
         { title: '填写信息', helper: '添加名称与可选描述，便于快速识别。' },
         { title: '设置封面', helper: '上传 PNG、JPG 或 WebP 图片作为封面。' }
       ],
-      directoryPlaceholder: '添加目录…',
       browseForPath: '选择文件夹…',
-      addPathButton: '新增路径',
       emptyPathHelper: '尚未选择文件夹，可以从手册档案、下载目录或 NAS 开始。',
       selectedTitle: '已选择的文件夹',
-      suggestionsTitle: '推荐位置',
-      useSuggested: '加入此文件夹',
       editPath: '更改…',
       removePath: '删除',
-      manualEntryHelper: '若无法浏览，可手动输入或粘贴路径。',
-      promptDirectory: '请输入文件夹路径',
       duplicatePath: '该文件夹已添加。',
       nameLabel: '收藏集名称',
       descriptionLabel: '简介',
       coverLabel: '封面图片',
       browseLabel: '浏览…',
-      dropHint: '拖拽图片至此或使用文件选择器。',
+      dropHint: '建议使用 1280×720 图片以获得最佳效果。',
       next: '下一步',
       back: '上一步',
       cancel: '取消',
@@ -298,6 +313,34 @@ export const translations = {
       },
       successTitle: '扫描已启动',
       successBody: '我们正在后台扫描您的文件夹，进度会显示在任务监视器与收藏集面板。'
+    },
+    scanOverlay: {
+      title: '正在扫描 {name}',
+      subtitle: '系统正在索引所选文件夹，进度信息实时更新。',
+      progressLabel: '进度',
+      statusLabel: '状态',
+      status: {
+        queued: '等待开始',
+        running: '扫描进行中…',
+        completed: '扫描完成'
+      },
+      pathsTitle: '扫描中的文件夹',
+      logTitle: '活动日志',
+      logs: {
+        empty: '正在等待扫描任务启动…',
+        queued: '任务已排队，等待可用的扫描资源。',
+        start: '开始扫描 {path}。',
+        discovery: '正在识别目录结构并统计文档数量…',
+        metadata: '正在解析文档元数据…',
+        embeddings: '正在生成 AI 所需的向量数据…',
+        completed: '扫描成功完成。',
+        fallbackPath: '所选文件夹'
+      },
+      buttons: {
+        home: '返回首页',
+        openCollection: '进入该收藏集'
+      },
+      fallbackName: '收藏集'
     },
     monitor: {
       title: '后台任务',

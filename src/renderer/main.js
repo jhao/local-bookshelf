@@ -407,19 +407,21 @@ const initialSettings = {
 
 let jobCounter = 0;
 
+const defaultWizardData = {
+  mode: 'create',
+  targetId: null,
+  paths: [],
+  name: '',
+  description: '',
+  coverName: '',
+  coverFile: null
+};
+
 const state = {
   locale: 'en',
   showWizard: false,
   wizardStep: 0,
-  wizardData: {
-    mode: 'create',
-    targetId: null,
-    paths: [],
-    name: '',
-    description: '',
-    coverName: '',
-    coverFile: null
-  },
+  wizardData: { ...defaultWizardData },
   wizardErrors: [],
   userCollections: [],
   collectionOverrides: {},
@@ -439,7 +441,8 @@ const state = {
   aiSessions: {},
   jobs: [],
   toast: null,
-  settings: { ...initialSettings }
+  settings: { ...initialSettings },
+  activeScan: null
 };
 
 const persistence = {
@@ -900,6 +903,68 @@ function showToast(message) {
     }
   }, 2800);
 }
+
+function pushScanLog(message) {
+  if (!state.activeScan || !message) {
+    return;
+  }
+  const locale = state.locale === 'zh' ? 'zh-CN' : 'en-US';
+  const timestamp = new Date().toLocaleTimeString(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+  state.activeScan.logs.push(`${timestamp} · ${message}`);
+  if (state.activeScan.logs.length > 30) {
+    state.activeScan.logs = state.activeScan.logs.slice(-30);
+  }
+}
+
+function updateScanOverlay(job) {
+  if (!state.activeScan || state.activeScan.jobId !== job?.id) {
+    return;
+  }
+  const pack = getPack();
+  const overlayPack = pack.scanOverlay;
+  if (!overlayPack) {
+    return;
+  }
+  state.activeScan.progress = job.progress;
+  state.activeScan.status = job.status;
+  const milestones = state.activeScan.milestones;
+
+  const ensureMilestone = (key, message) => {
+    if (!milestones.includes(key) && message) {
+      milestones.push(key);
+      pushScanLog(message);
+    }
+  };
+
+  if (job.status === 'queued') {
+    ensureMilestone('queued', overlayPack.logs.queued);
+  }
+  if (job.status === 'running') {
+    const firstPath = state.activeScan.paths?.[0] || overlayPack.logs.fallbackPath;
+    ensureMilestone('running', overlayPack.logs.start.replace('{path}', firstPath));
+  }
+
+  const checkpoints = [
+    { key: 'discovery', value: 20, message: overlayPack.logs.discovery },
+    { key: 'metadata', value: 50, message: overlayPack.logs.metadata },
+    { key: 'embeddings', value: 80, message: overlayPack.logs.embeddings }
+  ];
+
+  checkpoints.forEach(({ key, value, message }) => {
+    if (job.progress >= value) {
+      ensureMilestone(key, message);
+    }
+  });
+
+  if (job.status === 'completed') {
+    ensureMilestone('completed', overlayPack.logs.completed);
+  }
+}
+
 function createJob({ type, collectionId, label, onComplete }) {
   const job = {
     id: `job-${Date.now()}-${jobCounter++}`,
@@ -912,6 +977,7 @@ function createJob({ type, collectionId, label, onComplete }) {
     onComplete
   };
   state.jobs.unshift(job);
+  updateScanOverlay(job);
   renderApp();
   setTimeout(() => startJob(job), 300);
   return job;
@@ -923,6 +989,7 @@ function startJob(job) {
   }
   job.status = 'running';
   job.updatedAt = new Date();
+  updateScanOverlay(job);
   renderApp();
   advanceJob(job);
 }
@@ -935,6 +1002,7 @@ function advanceJob(job) {
     job.progress = 100;
     job.status = 'completed';
     job.updatedAt = new Date();
+    updateScanOverlay(job);
     renderApp();
     if (typeof job.onComplete === 'function') {
       job.onComplete();
@@ -944,6 +1012,7 @@ function advanceJob(job) {
   const increment = Math.min(100 - job.progress, Math.round(Math.random() * 15) + 10);
   job.progress += increment;
   job.updatedAt = new Date();
+  updateScanOverlay(job);
   renderApp();
   setTimeout(() => advanceJob(job), 600 + Math.random() * 400);
 }
@@ -959,19 +1028,10 @@ function generateBooksForNewCollection(collectionId, name) {
 }
 
 function openWizard(mode = 'create', targetId = null) {
-  const pack = getPack();
   state.showWizard = true;
   state.wizardStep = 0;
   state.wizardErrors = [];
-  state.wizardData = {
-    mode,
-    targetId,
-    paths: [],
-    name: '',
-    description: '',
-    coverName: '',
-    coverFile: null
-  };
+  state.wizardData = { ...defaultWizardData, mode, targetId };
   if (mode === 'edit' && targetId) {
     const display = getCollectionDisplay(targetId);
     const meta = state.collectionMeta[targetId] || { directories: [] };
@@ -986,6 +1046,8 @@ function openWizard(mode = 'create', targetId = null) {
 function closeWizard() {
   state.showWizard = false;
   state.wizardErrors = [];
+  state.wizardStep = 0;
+  state.wizardData = { ...defaultWizardData };
   renderApp();
 }
 
@@ -1071,7 +1133,7 @@ function completeWizard() {
       paths: [...state.wizardData.paths]
     };
     showToast(pack.wizard.successTitle);
-    createJob({
+    const job = createJob({
       type: 'scan',
       collectionId,
       label: `${name} · Initial scan`,
@@ -1084,8 +1146,21 @@ function completeWizard() {
         renderApp();
       }
     });
-    closeWizard();
-    setSelectedCollection(collectionId);
+    state.activeScan = {
+      jobId: job.id,
+      collectionId,
+      collectionName: name,
+      paths: [...state.wizardData.paths],
+      progress: 0,
+      status: 'queued',
+      logs: [],
+      milestones: []
+    };
+    state.showWizard = false;
+    state.wizardErrors = [];
+    state.wizardStep = 0;
+    state.wizardData = { ...defaultWizardData };
+    renderApp();
     return;
   }
   if (state.wizardData.mode === 'edit' && state.wizardData.targetId) {
@@ -1126,8 +1201,10 @@ function switchLocale(locale) {
 
 function renderTopBar(pack) {
   const titleGroup = createElement('div', { className: 'hero-group' });
-  titleGroup.appendChild(createElement('h1', { text: `🌤️ ${pack.heroTitle}` }));
-  titleGroup.appendChild(createElement('p', { text: pack.heroSubtitle }));
+  titleGroup.appendChild(createElement('h1', { text: pack.heroTitle }));
+  if (pack.heroSubtitle) {
+    titleGroup.appendChild(createElement('p', { text: pack.heroSubtitle }));
+  }
 
   const actions = createElement('div', { className: 'action-group' });
   const monitorButton = createElement('button', {
@@ -1186,7 +1263,8 @@ function renderBreadcrumbs(pack) {
   const items = [
     {
       id: 'dashboard',
-      label: state.locale === 'zh' ? '🏠 仪表盘' : '🏠 Dashboard'
+      label: '🏠',
+      ariaLabel: state.locale === 'zh' ? '返回首页' : 'Return to dashboard'
     }
   ];
 
@@ -1209,6 +1287,10 @@ function renderBreadcrumbs(pack) {
       className: item.id === state.activePage ? 'active' : ''
     });
     button.type = 'button';
+    if (item.ariaLabel) {
+      button.setAttribute('aria-label', item.ariaLabel);
+      button.title = item.ariaLabel;
+    }
     button.addEventListener('click', () => {
       if (item.id === 'collection' && !state.selectedCollectionId) {
         return;
@@ -1349,7 +1431,6 @@ function renderDashboardPage(pack) {
   const page = createElement('main', { className: 'page dashboard-page' });
   page.appendChild(renderStats(pack));
   page.appendChild(renderCollections(pack));
-  page.appendChild(renderRoadmap(pack));
   return page;
 }
 
@@ -2488,6 +2569,22 @@ function renderWizardOverlay(pack) {
   const overlay = createElement('div', { className: 'modal-overlay' });
   const panel = createElement('div', { className: 'modal-panel wizard' });
   panel.appendChild(createElement('h3', { text: pack.wizard.title }));
+
+  const stepList = createElement('ol', { className: 'wizard-steps' });
+  pack.wizard.steps.forEach((step, index) => {
+    const classes = ['wizard-step'];
+    if (index === state.wizardStep) {
+      classes.push('active');
+    } else if (index < state.wizardStep) {
+      classes.push('completed');
+    }
+    const item = createElement('li', { className: classes.join(' ') });
+    item.appendChild(createElement('span', { className: 'wizard-step-index', text: index + 1 }));
+    item.appendChild(createElement('span', { className: 'wizard-step-title', text: step.title }));
+    stepList.appendChild(item);
+  });
+  panel.appendChild(stepList);
+
   const stepInfo = pack.wizard.steps[state.wizardStep];
   panel.appendChild(createElement('h4', { text: stepInfo.title }));
   panel.appendChild(createElement('p', { className: 'wizard-helper', text: stepInfo.helper }));
@@ -2540,7 +2637,7 @@ function renderWizardOverlay(pack) {
         const editButton = createElement('button', { className: 'ghost-button small', text: pack.wizard.editPath });
         editButton.type = 'button';
         editButton.addEventListener('click', async () => {
-          const selected = await requestDirectory(pathValue, pack.wizard.promptDirectory);
+          const selected = await requestDirectory(pathValue);
           if (selected) {
             mutatePaths(selected, { replaceIndex: index });
           }
@@ -2565,70 +2662,41 @@ function renderWizardOverlay(pack) {
     const browseButton = createElement('button', { className: 'ghost-button primary', text: pack.wizard.browseForPath });
     browseButton.type = 'button';
     browseButton.addEventListener('click', async () => {
-      const selected = await requestDirectory('', pack.wizard.promptDirectory);
+      const selected = await requestDirectory('');
       if (selected) {
         mutatePaths(selected);
       }
     });
     panel.appendChild(browseButton);
-
-    const manualRow = createElement('div', { className: 'path-manual-row' });
-    const manualInput = createElement('input', {
-      attributes: { type: 'text', placeholder: pack.wizard.directoryPlaceholder }
-    });
-    const manualButton = createElement('button', { className: 'ghost-button', text: pack.wizard.addPathButton });
-    manualButton.type = 'button';
-    manualButton.addEventListener('click', () => {
-      if (mutatePaths(manualInput.value)) {
-        manualInput.value = '';
-      }
-    });
-    manualRow.appendChild(manualInput);
-    manualRow.appendChild(manualButton);
-    panel.appendChild(manualRow);
-    panel.appendChild(createElement('p', { className: 'wizard-helper', text: pack.wizard.manualEntryHelper }));
-
-    if (directoryOptions.length) {
-      panel.appendChild(createElement('h5', { className: 'path-section-title', text: pack.wizard.suggestionsTitle }));
-      const suggestions = createElement('div', { className: 'path-suggestions' });
-      directoryOptions.forEach((option) => {
-        const suggestion = createElement('div', { className: 'path-suggestion' });
-        const info = createElement('div', { className: 'path-suggestion-info' });
-        info.appendChild(createElement('strong', { text: option.path }));
-        info.appendChild(
-          createElement('span', {
-            text: `${formatDate(option.lastIndexed)} · ${option.helper}`
-          })
-        );
-        const addSuggestion = createElement('button', {
-          className: 'ghost-button small',
-          text: pack.wizard.useSuggested
-        });
-        addSuggestion.type = 'button';
-        addSuggestion.addEventListener('click', () => mutatePaths(option.path));
-        suggestion.appendChild(info);
-        suggestion.appendChild(addSuggestion);
-        suggestions.appendChild(suggestion);
-      });
-      panel.appendChild(suggestions);
-    }
   } else if (state.wizardStep === 1) {
-    const nameInput = createElement('input', { attributes: { type: 'text', value: state.wizardData.name } });
+    const nameField = createElement('div', { className: 'wizard-field' });
+    const nameInput = createElement('input', {
+      className: 'wizard-input',
+      attributes: { type: 'text', value: state.wizardData.name }
+    });
     nameInput.addEventListener('input', (event) => {
       state.wizardData.name = event.target.value;
     });
+    const descriptionField = createElement('div', { className: 'wizard-field' });
     const descriptionInput = createElement('textarea', {
+      className: 'wizard-textarea',
       attributes: { rows: 3, value: state.wizardData.description }
     });
     descriptionInput.addEventListener('input', (event) => {
       state.wizardData.description = event.target.value;
     });
-    panel.appendChild(createElement('label', { text: pack.wizard.nameLabel }));
-    panel.appendChild(nameInput);
-    panel.appendChild(createElement('label', { text: pack.wizard.descriptionLabel }));
-    panel.appendChild(descriptionInput);
+    nameField.appendChild(createElement('label', { text: pack.wizard.nameLabel }));
+    nameField.appendChild(nameInput);
+    descriptionField.appendChild(createElement('label', { text: pack.wizard.descriptionLabel }));
+    descriptionField.appendChild(descriptionInput);
+    panel.appendChild(nameField);
+    panel.appendChild(descriptionField);
   } else if (state.wizardStep === 2) {
-    const coverInput = createElement('input', { attributes: { type: 'file', accept: 'image/png,image/jpeg,image/webp' } });
+    const coverField = createElement('div', { className: 'wizard-field' });
+    const coverInput = createElement('input', {
+      className: 'wizard-file',
+      attributes: { type: 'file', accept: 'image/png,image/jpeg,image/webp' }
+    });
     coverInput.addEventListener('change', (event) => {
       const file = event.target.files?.[0];
       if (file) {
@@ -2636,10 +2704,11 @@ function renderWizardOverlay(pack) {
         state.wizardData.coverName = file.name;
       }
     });
-    panel.appendChild(createElement('label', { text: pack.wizard.coverLabel }));
-    panel.appendChild(coverInput);
+    coverField.appendChild(createElement('label', { text: pack.wizard.coverLabel }));
+    coverField.appendChild(coverInput);
+    panel.appendChild(coverField);
     if (state.wizardData.coverName) {
-      panel.appendChild(createElement('p', { text: state.wizardData.coverName }));
+      panel.appendChild(createElement('span', { className: 'file-name-tag', text: state.wizardData.coverName }));
     } else {
       panel.appendChild(createElement('p', { className: 'wizard-helper', text: pack.wizard.dropHint }));
     }
@@ -2660,7 +2729,8 @@ function renderWizardOverlay(pack) {
     }
   });
   const nextButton = createElement('button', {
-    text: state.wizardStep === 2 ? pack.wizard.finish : pack.wizard.next
+    className: 'primary-button',
+    text: state.wizardStep === pack.wizard.steps.length - 1 ? pack.wizard.finish : pack.wizard.next
   });
   nextButton.type = 'button';
   nextButton.addEventListener('click', () => {
@@ -2678,6 +2748,88 @@ function renderWizardOverlay(pack) {
   actions.appendChild(cancelButton);
   actions.appendChild(backButton);
   actions.appendChild(nextButton);
+  panel.appendChild(actions);
+  overlay.appendChild(panel);
+  return overlay;
+}
+
+function renderScanOverlay(pack) {
+  if (!state.activeScan) {
+    return null;
+  }
+  const overlayPack = pack.scanOverlay;
+  if (!overlayPack) {
+    return null;
+  }
+  const overlay = createElement('div', { className: 'modal-overlay' });
+  const panel = createElement('div', { className: 'modal-panel wizard scan-panel' });
+  const collectionName = state.activeScan.collectionName || overlayPack.fallbackName || '';
+  const title = overlayPack.title.replace('{name}', collectionName);
+  panel.appendChild(createElement('h3', { text: title }));
+  panel.appendChild(createElement('p', { className: 'wizard-helper', text: overlayPack.subtitle }));
+
+  if (state.activeScan.paths?.length) {
+    const pathGroup = createElement('div', { className: 'scan-paths' });
+    pathGroup.appendChild(createElement('span', { className: 'scan-paths-label', text: overlayPack.pathsTitle }));
+    const list = createElement('ul');
+    state.activeScan.paths.forEach((pathValue) => {
+      list.appendChild(createElement('li', { text: pathValue }));
+    });
+    pathGroup.appendChild(list);
+    panel.appendChild(pathGroup);
+  }
+
+  const progressWrapper = createElement('div', { className: 'scan-progress' });
+  const percent = Math.min(100, Math.round(state.activeScan.progress || 0));
+  const statusText = overlayPack.status[state.activeScan.status] || state.activeScan.status;
+  const statusRow = createElement('div', {
+    className: 'scan-status-row',
+    children: [
+      createElement('span', { className: 'scan-progress-label', text: `${overlayPack.progressLabel} · ${percent}%` }),
+      createElement('span', { className: 'scan-status-label', text: `${overlayPack.statusLabel} · ${statusText}` })
+    ]
+  });
+  progressWrapper.appendChild(statusRow);
+  const track = createElement('div', { className: 'scan-progress-track' });
+  const fill = createElement('div', { className: 'scan-progress-fill' });
+  fill.style.width = `${percent}%`;
+  track.appendChild(fill);
+  progressWrapper.appendChild(track);
+  panel.appendChild(progressWrapper);
+
+  panel.appendChild(createElement('h4', { text: overlayPack.logTitle }));
+  const logBox = createElement('div', { className: 'scan-log' });
+  if (!state.activeScan.logs.length) {
+    logBox.appendChild(createElement('p', { className: 'wizard-helper', text: overlayPack.logs.empty }));
+  } else {
+    const logList = createElement('ul');
+    state.activeScan.logs.forEach((entry) => {
+      logList.appendChild(createElement('li', { text: entry }));
+    });
+    logBox.appendChild(logList);
+  }
+  panel.appendChild(logBox);
+
+  const actions = createElement('div', { className: 'modal-actions' });
+  const homeButton = createElement('button', { className: 'ghost-button', text: overlayPack.buttons.home });
+  homeButton.type = 'button';
+  homeButton.addEventListener('click', () => {
+    state.activeScan = null;
+    setActivePage('dashboard');
+  });
+  const openButton = createElement('button', { className: 'primary-button', text: overlayPack.buttons.openCollection });
+  openButton.type = 'button';
+  openButton.addEventListener('click', () => {
+    const targetId = state.activeScan?.collectionId;
+    state.activeScan = null;
+    if (targetId) {
+      setSelectedCollection(targetId);
+    } else {
+      setActivePage('dashboard');
+    }
+  });
+  actions.appendChild(homeButton);
+  actions.appendChild(openButton);
   panel.appendChild(actions);
   overlay.appendChild(panel);
   return overlay;
@@ -2713,6 +2865,12 @@ function renderApp() {
     const overlay = renderWizardOverlay(pack);
     if (overlay) {
       root.appendChild(overlay);
+    }
+  }
+  if (state.activeScan) {
+    const scanOverlay = renderScanOverlay(pack);
+    if (scanOverlay) {
+      root.appendChild(scanOverlay);
     }
   }
   const toast = renderToast();
