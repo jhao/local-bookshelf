@@ -26,6 +26,33 @@ const formatCatalog = {
   azw3: { en: 'AZW3', zh: 'AZW3' }
 };
 
+const statEmojiMap = {
+  collections: '🗂️',
+  books: '📚',
+  enrichment: '✨',
+  reading: '🎧'
+};
+
+const collectionEmojiMap = {
+  'new-collection': '🌟',
+  climate: '🌤️',
+  design: '🎨',
+  literature: '📖'
+};
+
+const classificationEmojiMap = {
+  'climate.adaptation': '🏙️',
+  'climate.policy': '📜',
+  'climate.science': '🌊',
+  'climate.energy': '🔋',
+  'design.systems': '🧩',
+  'design.process': '🛠️',
+  'design.accessibility': '♿',
+  'literature.fiction': '🕯️',
+  'literature.poetry': '🎴',
+  'literature.essay': '📝'
+};
+
 const enrichmentLabels = {
   complete: { en: 'Complete', zh: '已完成' },
   inprogress: { en: 'In Progress', zh: '进行中' },
@@ -398,10 +425,9 @@ const state = {
   collectionOverrides: {},
   collectionMeta: JSON.parse(JSON.stringify(initialCollectionMetadata)),
   collectionBooks: JSON.parse(JSON.stringify(initialCollectionBooks)),
-  monitorOpen: false,
-  settingsOpen: false,
   selectedCollectionId: null,
   selectedBookId: null,
+  activePage: 'dashboard',
   preferences: {},
   bookmarks: Object.keys(initialBookmarks).reduce((map, id) => {
     map[id] = new Set(initialBookmarks[id]);
@@ -693,6 +719,25 @@ function deepCloneBooks(books) {
   return JSON.parse(JSON.stringify(books));
 }
 
+function getCollectionEmoji(id) {
+  return collectionEmojiMap[id] || '📚';
+}
+
+function getClassificationEmoji(key) {
+  return classificationEmojiMap[key] || '📘';
+}
+
+function setActivePage(page) {
+  state.activePage = page;
+  if (page !== 'collection') {
+    state.selectedBookId = null;
+    if (page === 'dashboard') {
+      state.selectedCollectionId = null;
+    }
+  }
+  renderApp();
+}
+
 function getCollectionDisplay(id) {
   const pack = getPack();
   if (id === 'new-collection') {
@@ -788,6 +833,7 @@ function getBookmarks(bookId) {
 
 function setSelectedCollection(collectionId) {
   state.selectedCollectionId = collectionId;
+  state.activePage = 'collection';
   const books = getBooks(collectionId);
   if (books.length) {
     state.selectedBookId = books[0].id;
@@ -1080,29 +1126,23 @@ function switchLocale(locale) {
 
 function renderTopBar(pack) {
   const titleGroup = createElement('div', { className: 'hero-group' });
-  titleGroup.appendChild(createElement('h1', { text: pack.heroTitle }));
+  titleGroup.appendChild(createElement('h1', { text: `🌤️ ${pack.heroTitle}` }));
   titleGroup.appendChild(createElement('p', { text: pack.heroSubtitle }));
 
   const actions = createElement('div', { className: 'action-group' });
   const monitorButton = createElement('button', {
-    className: `pill-button${state.monitorOpen ? ' active' : ''}`,
-    text: pack.actionBar.toggleMonitor
+    className: `pill-button${state.activePage === 'monitor' ? ' active' : ''}`,
+    text: `🛠️ ${pack.actionBar.toggleMonitor}`
   });
   monitorButton.type = 'button';
-  monitorButton.addEventListener('click', () => {
-    state.monitorOpen = !state.monitorOpen;
-    renderApp();
-  });
+  monitorButton.addEventListener('click', () => setActivePage('monitor'));
 
   const settingsButton = createElement('button', {
-    className: `pill-button${state.settingsOpen ? ' active' : ''}`,
-    text: pack.actionBar.openSettings
+    className: `pill-button${state.activePage === 'settings' ? ' active' : ''}`,
+    text: `⚙️ ${pack.actionBar.openSettings}`
   });
   settingsButton.type = 'button';
-  settingsButton.addEventListener('click', () => {
-    state.settingsOpen = !state.settingsOpen;
-    renderApp();
-  });
+  settingsButton.addEventListener('click', () => setActivePage('settings'));
 
   const toggle = createElement('div', {
     className: 'language-toggle',
@@ -1137,6 +1177,52 @@ function renderTopBar(pack) {
   });
 }
 
+function renderBreadcrumbs(pack) {
+  const nav = createElement('nav', {
+    className: 'breadcrumbs',
+    attributes: { 'aria-label': state.locale === 'zh' ? '页面导航' : 'Page navigation' }
+  });
+  const list = createElement('ol');
+  const items = [
+    {
+      id: 'dashboard',
+      label: state.locale === 'zh' ? '🏠 仪表盘' : '🏠 Dashboard'
+    }
+  ];
+
+  if (state.activePage === 'collection' && state.selectedCollectionId) {
+    const display = getCollectionDisplay(state.selectedCollectionId);
+    items.push({
+      id: 'collection',
+      label: `${getCollectionEmoji(state.selectedCollectionId)} ${display?.title || ''}`
+    });
+  } else if (state.activePage === 'monitor') {
+    items.push({ id: 'monitor', label: `🛠️ ${pack.monitor.title}` });
+  } else if (state.activePage === 'settings') {
+    items.push({ id: 'settings', label: `⚙️ ${pack.settings.title}` });
+  }
+
+  items.forEach((item) => {
+    const entry = createElement('li');
+    const button = createElement('button', {
+      text: item.label,
+      className: item.id === state.activePage ? 'active' : ''
+    });
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      if (item.id === 'collection' && !state.selectedCollectionId) {
+        return;
+      }
+      setActivePage(item.id);
+    });
+    entry.appendChild(button);
+    list.appendChild(entry);
+  });
+
+  nav.appendChild(list);
+  return nav;
+}
+
 function renderStats(pack) {
   const statsGrid = createElement('section', {
     className: 'dashboard-grid',
@@ -1144,7 +1230,8 @@ function renderStats(pack) {
   });
   pack.stats.forEach((stat) => {
     const card = createElement('article', { className: 'dashboard-card' });
-    card.appendChild(createElement('h3', { text: stat.label }));
+    const emoji = statEmojiMap[stat.id] || '📊';
+    card.appendChild(createElement('h3', { text: `${emoji} ${stat.label}` }));
     card.appendChild(createElement('strong', { text: stat.value }));
     card.appendChild(createElement('p', { text: stat.helper }));
     statsGrid.appendChild(card);
@@ -1208,7 +1295,10 @@ function renderCollections(pack) {
     const card = createElement('div', {
       className: `collection-card${isNew ? ' new-collection-card' : ''}`
     });
-    card.appendChild(createElement('h4', { text: collection.title }));
+    const placeholderText = state.locale === 'zh' ? '图片占位' : 'Image placeholder';
+    card.appendChild(createElement('div', { className: 'image-placeholder', text: placeholderText }));
+    const emoji = getCollectionEmoji(collection.id);
+    card.appendChild(createElement('h4', { text: `${emoji} ${collection.title}` }));
     card.appendChild(createElement('p', { text: collection.description }));
     card.appendChild(createElement('p', { text: collection.stats }));
     const actionRow = createElement('div', { className: 'collection-actions' });
@@ -1242,7 +1332,7 @@ function renderRoadmap(pack) {
   section.appendChild(
     createElement('div', {
       className: 'section-header',
-      children: [createElement('h2', { text: pack.roadmapTitle })]
+      children: [createElement('h2', { text: `🚀 ${pack.roadmapTitle}` })]
     })
   );
   const grid = createElement('div', { className: 'dashboard-grid multi-column' });
@@ -1253,6 +1343,35 @@ function renderRoadmap(pack) {
   });
   section.appendChild(grid);
   return section;
+}
+
+function renderDashboardPage(pack) {
+  const page = createElement('main', { className: 'page dashboard-page' });
+  page.appendChild(renderStats(pack));
+  page.appendChild(renderCollections(pack));
+  page.appendChild(renderRoadmap(pack));
+  return page;
+}
+
+function renderCollectionPage(pack) {
+  const page = createElement('main', { className: 'page collection-page' });
+  const detail = renderCollectionDetail(pack);
+  if (detail) {
+    page.appendChild(detail);
+  }
+  const experienceGrid = createElement('div', { className: 'experience-grid' });
+  const preview = renderPreviewPanel(pack);
+  if (preview) {
+    experienceGrid.appendChild(preview);
+  }
+  const ai = renderAiPanel(pack);
+  if (ai) {
+    experienceGrid.appendChild(ai);
+  }
+  if (experienceGrid.childElementCount) {
+    page.appendChild(experienceGrid);
+  }
+  return page;
 }
 function renderFilters(collectionId, preferences, pack) {
   const filters = createElement('div', { className: 'filters-panel' });
@@ -1436,6 +1555,8 @@ function renderCardView(books, preferences, pack) {
   }
   books.forEach((book) => {
     const card = createElement('article', { className: 'book-card' });
+    const placeholderText = state.locale === 'zh' ? '封面占位' : 'Cover placeholder';
+    card.appendChild(createElement('div', { className: 'image-placeholder small', text: placeholderText }));
     const header = createElement('div', { className: 'book-card-header' });
     const checkbox = createElement('input', {
       attributes: { type: 'checkbox', 'aria-label': book.title }
@@ -1450,7 +1571,8 @@ function renderCardView(books, preferences, pack) {
       renderApp();
     });
     header.appendChild(checkbox);
-    header.appendChild(createElement('h3', { text: book.title }));
+    const emoji = getClassificationEmoji(book.classification);
+    header.appendChild(createElement('h3', { text: `${emoji} ${book.title}` }));
     card.appendChild(header);
     card.appendChild(
       createElement('p', {
@@ -1745,7 +1867,13 @@ function renderCollectionDetail(pack) {
   const paginated = books.slice(startIndex, startIndex + preferences.pageSize);
 
   const section = createElement('section', { className: 'detail-section' });
-  section.appendChild(createElement('h2', { text: `${pack.collectionDetail.titlePrefix}: ${display?.title || ''}` }));
+  const placeholderText = state.locale === 'zh' ? '封面预留' : 'Cover placeholder';
+  section.appendChild(createElement('div', { className: 'image-placeholder tall', text: placeholderText }));
+  section.appendChild(
+    createElement('h2', {
+      text: `${getCollectionEmoji(collectionId)} ${pack.collectionDetail.titlePrefix}: ${display?.title || ''}`
+    })
+  );
   section.appendChild(
     createElement('p', {
       className: 'detail-subtitle',
@@ -2156,13 +2284,13 @@ function renderAiPanel(pack) {
   container.appendChild(newChat);
   return container;
 }
-function renderSettingsOverlay(pack) {
-  const overlay = createElement('div', { className: 'modal-overlay' });
-  const panel = createElement('div', { className: 'modal-panel' });
-  panel.appendChild(createElement('h3', { text: pack.settings.title }));
+function renderSettingsPage(pack) {
+  const page = createElement('main', { className: 'page settings-page' });
+  const panel = createElement('section', { className: 'settings-panel' });
+  panel.appendChild(createElement('h2', { text: `⚙️ ${pack.settings.title}` }));
 
   const metadataGroup = createElement('div', { className: 'settings-group' });
-  metadataGroup.appendChild(createElement('h4', { text: pack.settings.tabs[0] }));
+  metadataGroup.appendChild(createElement('h3', { text: pack.settings.tabs[0] }));
   const metadataSources = createElement('input', {
     attributes: { type: 'text', value: state.settings.metadataSources }
   });
@@ -2198,7 +2326,7 @@ function renderSettingsOverlay(pack) {
   metadataGroup.appendChild(proxy);
 
   const storageGroup = createElement('div', { className: 'settings-group' });
-  storageGroup.appendChild(createElement('h4', { text: pack.settings.tabs[1] }));
+  storageGroup.appendChild(createElement('h3', { text: pack.settings.tabs[1] }));
   const cachePath = createElement('input', {
     attributes: { type: 'text', value: state.settings.cachePath }
   });
@@ -2225,7 +2353,7 @@ function renderSettingsOverlay(pack) {
   storageGroup.appendChild(embeddingsPath);
 
   const readerGroup = createElement('div', { className: 'settings-group' });
-  readerGroup.appendChild(createElement('h4', { text: pack.settings.tabs[2] }));
+  readerGroup.appendChild(createElement('h3', { text: pack.settings.tabs[2] }));
   const paginationInput = createElement('input', {
     attributes: { type: 'number', min: 10, max: 500, value: state.settings.paginationDefault }
   });
@@ -2267,30 +2395,24 @@ function renderSettingsOverlay(pack) {
   readerGroup.appendChild(themeSelect);
   readerGroup.appendChild(analyticsToggle);
   readerGroup.appendChild(offlineToggle);
-
-  const actions = createElement('div', { className: 'modal-actions' });
-  const closeButton = createElement('button', { className: 'ghost-button', text: pack.wizard.cancel });
-  closeButton.type = 'button';
-  closeButton.addEventListener('click', () => {
-    state.settingsOpen = false;
-    renderApp();
-  });
-  const saveButton = createElement('button', { text: pack.settings.save });
+  const actions = createElement('div', { className: 'settings-actions' });
+  const backButton = createElement('button', { className: 'ghost-button', text: pack.wizard.cancel });
+  backButton.type = 'button';
+  backButton.addEventListener('click', () => setActivePage('dashboard'));
+  const saveButton = createElement('button', { className: 'ghost-button primary', text: pack.settings.save });
   saveButton.type = 'button';
   saveButton.addEventListener('click', () => {
-    state.settingsOpen = false;
     showToast(pack.settings.saved);
-    renderApp();
   });
-  actions.appendChild(closeButton);
+  actions.appendChild(backButton);
   actions.appendChild(saveButton);
 
   panel.appendChild(metadataGroup);
   panel.appendChild(storageGroup);
   panel.appendChild(readerGroup);
   panel.appendChild(actions);
-  overlay.appendChild(panel);
-  return overlay;
+  page.appendChild(panel);
+  return page;
 }
 
 function getJobTypeLabel(type) {
@@ -2306,17 +2428,10 @@ function getJobTypeLabel(type) {
   return type;
 }
 
-function renderMonitorOverlay(pack) {
-  const overlay = createElement('div', { className: 'modal-overlay' });
-  const panel = createElement('div', { className: 'modal-panel wide' });
-  panel.appendChild(createElement('h3', { text: pack.monitor.title }));
-  const closeButton = createElement('button', { className: 'ghost-button', text: pack.wizard.cancel });
-  closeButton.type = 'button';
-  closeButton.addEventListener('click', () => {
-    state.monitorOpen = false;
-    renderApp();
-  });
-  panel.appendChild(closeButton);
+function renderMonitorPage(pack) {
+  const page = createElement('main', { className: 'page monitor-page' });
+  const panel = createElement('section', { className: 'monitor-panel' });
+  panel.appendChild(createElement('h2', { text: `🛠️ ${pack.monitor.title}` }));
 
   if (!state.jobs.length) {
     panel.appendChild(createElement('p', { className: 'empty-state', text: pack.monitor.empty }));
@@ -2355,8 +2470,15 @@ function renderMonitorOverlay(pack) {
     table.appendChild(tbody);
     panel.appendChild(table);
   }
-  overlay.appendChild(panel);
-  return overlay;
+
+  const actionRow = createElement('div', { className: 'settings-actions' });
+  const backButton = createElement('button', { className: 'ghost-button', text: pack.wizard.cancel });
+  backButton.type = 'button';
+  backButton.addEventListener('click', () => setActivePage('dashboard'));
+  actionRow.appendChild(backButton);
+  panel.appendChild(actionRow);
+  page.appendChild(panel);
+  return page;
 }
 
 function renderWizardOverlay(pack) {
@@ -2573,24 +2695,20 @@ function renderApp() {
   root.innerHTML = '';
   const appShell = createElement('div', { className: 'app-shell' });
   appShell.appendChild(renderTopBar(pack));
-  appShell.appendChild(renderStats(pack));
-  appShell.appendChild(renderCollections(pack));
-  if (state.selectedCollectionId) {
-    appShell.appendChild(renderCollectionDetail(pack));
-    const experienceGrid = createElement('div', { className: 'experience-grid' });
-    experienceGrid.appendChild(renderPreviewPanel(pack));
-    experienceGrid.appendChild(renderAiPanel(pack));
-    appShell.appendChild(experienceGrid);
-  }
-  appShell.appendChild(renderRoadmap(pack));
-  root.appendChild(appShell);
+  appShell.appendChild(renderBreadcrumbs(pack));
 
-  if (state.settingsOpen) {
-    root.appendChild(renderSettingsOverlay(pack));
+  if (state.activePage === 'dashboard') {
+    appShell.appendChild(renderDashboardPage(pack));
+  } else if (state.activePage === 'collection' && state.selectedCollectionId) {
+    appShell.appendChild(renderCollectionPage(pack));
+  } else if (state.activePage === 'monitor') {
+    appShell.appendChild(renderMonitorPage(pack));
+  } else if (state.activePage === 'settings') {
+    appShell.appendChild(renderSettingsPage(pack));
+  } else {
+    appShell.appendChild(renderDashboardPage(pack));
   }
-  if (state.monitorOpen) {
-    root.appendChild(renderMonitorOverlay(pack));
-  }
+  root.appendChild(appShell);
   if (state.showWizard) {
     const overlay = renderWizardOverlay(pack);
     if (overlay) {
