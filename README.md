@@ -9,3 +9,20 @@ This repository captures the product and technical specification for the Local B
 - AI-assisted conversations grounded in the contents of each collection.
 
 See [`docs/functional_spec.md`](docs/functional_spec.md) for the detailed functional specification.
+
+## Development Setup / 开发环境准备
+
+1. Install dependencies 安装依赖：
+   ```bash
+   npm install
+   ```
+2. Start the bilingual Electron + React workspace 启动中英文双语界面：
+   ```bash
+   npm run dev
+   ```
+   The command launches the Vite renderer dev server and boots Electron with hot-reloading TypeScript support.
+
+3. Build production assets 构建生产资源：
+   ```bash
+   npm run build
+   ```
