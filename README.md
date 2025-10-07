@@ -12,17 +12,20 @@ See [`docs/functional_spec.md`](docs/functional_spec.md) for the detailed functi
 
 ## Development Setup / 开发环境准备
 
-1. Install dependencies 安装依赖：
+The UI blueprint now ships as a static bundle with no external npm dependencies so it can be explored completely offline.
+
+1. Install dependencies 安装依赖（离线环境无需下载任何包）：
    ```bash
    npm install
    ```
-2. Start the bilingual Electron + React workspace 启动中英文双语界面：
+2. Start the bilingual preview server 启动中英文预览服务：
    ```bash
    npm run dev
    ```
-   The command launches the Vite renderer dev server and boots Electron with hot-reloading TypeScript support.
+   The command launches a lightweight Node.js static server on [http://localhost:4173](http://localhost:4173).
 
-3. Build production assets 构建生产资源：
+3. Build static assets 构建静态资源：
    ```bash
    npm run build
    ```
+   The compiled files are copied into the `dist/` folder for sharing or packaging.
