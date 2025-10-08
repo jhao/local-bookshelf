@@ -364,6 +364,23 @@ body {
   border-color: #1e3a8a;
 }
 
+.ghost-button.danger {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.ghost-button.danger:hover {
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
+.ghost-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .collection-hero {
   display: flex;
   justify-content: space-between;
@@ -1164,6 +1181,19 @@ body {
 .settings-group label {
   font-size: 0.9rem;
   color: #475569;
+}
+
+.settings-helper {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.system-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
 }
 
 .settings-actions {

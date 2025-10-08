@@ -1,41 +1,16 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const fs = require('fs');
+
+const {
+  initializeDatabase,
+  loadState,
+  saveState,
+  getBootstrapData,
+  resetDatabase,
+  backupDatabase
+} = require('./database');
 
 const isDev = process.env.NODE_ENV !== 'production';
-
-function getStateFilePath() {
-  return path.join(app.getPath('userData'), 'local-bookshelf-state.json');
-}
-
-async function readStateFromDisk() {
-  const filePath = getStateFilePath();
-  try {
-    const data = await fs.promises.readFile(filePath, 'utf-8');
-    return JSON.parse(data);
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      return null;
-    }
-    console.error('Failed to read persisted state', error);
-    return null;
-  }
-}
-
-async function writeStateToDisk(state) {
-  if (!state || typeof state !== 'object') {
-    return false;
-  }
-  const filePath = getStateFilePath();
-  try {
-    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.promises.writeFile(filePath, JSON.stringify(state, null, 2), 'utf-8');
-    return true;
-  } catch (error) {
-    console.error('Failed to write persisted state', error);
-    return false;
-  }
-}
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -60,6 +35,12 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  try {
+    initializeDatabase();
+  } catch (error) {
+    console.error('Failed to initialize database', error);
+  }
+
   createWindow();
 
   app.on('activate', () => {
@@ -89,9 +70,63 @@ ipcMain.handle('dialog:select-directory', async (event, options = {}) => {
 });
 
 ipcMain.handle('state:load', async () => {
-  return readStateFromDisk();
+  try {
+    return loadState();
+  } catch (error) {
+    console.error('Failed to load state from database', error);
+    return null;
+  }
 });
 
 ipcMain.handle('state:save', async (_event, nextState) => {
-  return writeStateToDisk(nextState);
+  try {
+    return saveState(nextState);
+  } catch (error) {
+    console.error('Failed to persist state to database', error);
+    return false;
+  }
+});
+
+ipcMain.handle('bootstrap:data', async () => {
+  try {
+    return getBootstrapData();
+  } catch (error) {
+    console.error('Failed to load bootstrap data', error);
+    return null;
+  }
+});
+
+ipcMain.handle('system:initialize', async () => {
+  try {
+    resetDatabase();
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to reset database', error);
+    return { success: false, message: error.message };
+  }
+});
+
+ipcMain.handle('system:backup', async (event, options = {}) => {
+  const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[:]/g, '-')
+    .replace(/\..+$/, '');
+  const defaultFileName = options.defaultFileName || `local-bookshelf-backup-${timestamp}.db`;
+  const defaultPath = options.defaultPath || path.join(app.getPath('documents'), defaultFileName);
+  const result = await dialog.showSaveDialog(browserWindow, {
+    title: 'Create database backup',
+    defaultPath,
+    filters: [{ name: 'SQLite Database', extensions: ['db'] }]
+  });
+  if (result.canceled || !result.filePath) {
+    return { success: false, cancelled: true };
+  }
+  try {
+    await backupDatabase(result.filePath);
+    return { success: true, path: result.filePath };
+  } catch (error) {
+    console.error('Failed to back up database', error);
+    return { success: false, message: error.message };
+  }
 });

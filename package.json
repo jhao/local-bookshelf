@@ -12,5 +12,8 @@
   },
   "devDependencies": {
     "electron": "^28.2.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^8.5.2"
   }
 }

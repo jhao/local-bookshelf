@@ -9,5 +9,14 @@ contextBridge.exposeInMainWorld('api', {
   },
   saveState(state) {
     return ipcRenderer.invoke('state:save', state);
+  },
+  bootstrap() {
+    return ipcRenderer.invoke('bootstrap:data');
+  },
+  initializeSystem() {
+    return ipcRenderer.invoke('system:initialize');
+  },
+  backupSystem(options) {
+    return ipcRenderer.invoke('system:backup', options);
   }
 });
