@@ -1,364 +1,63 @@
-import { translations } from './data.js';
-
-const root = document.getElementById('root');
-
-const supportedCoverTypes = ['image/png', 'image/jpeg', 'image/webp'];
-
-const classificationCatalog = {
-  X4: { en: 'Environmental Science Fundamentals', zh: '环境科学基础理论' },
-  X5: { en: 'Environmental Protection Management', zh: '环境保护管理' },
-  F2: { en: 'National Economic Management', zh: '国民经济管理' },
-  F49: { en: 'Energy Economics', zh: '能源经济' },
-  TU201: { en: 'Urban Planning Theory', zh: '城市规划理论' },
-  TB472: { en: 'Industrial Design', zh: '工业设计' },
-  'TB472.1': { en: 'Design Systems', zh: '设计系统' },
-  I2067: { en: 'Modern Chinese Fiction', zh: '现代小说' },
-  I227: { en: 'Poetry', zh: '诗歌' },
-  I267: { en: 'Essays & Reportage', zh: '散文·报告文学' }
-};
-
-const formatCatalog = {
-  pdf: { en: 'PDF', zh: 'PDF' },
-  epub: { en: 'EPUB', zh: 'EPUB' },
-  mobi: { en: 'MOBI', zh: 'MOBI' },
-  docx: { en: 'DOCX', zh: 'DOCX' },
-  txt: { en: 'Plain Text', zh: '纯文本' },
-  azw3: { en: 'AZW3', zh: 'AZW3' }
-};
-
-const statEmojiMap = {
-  collections: '🗂️',
-  books: '📚',
-  enrichment: '✨',
-  reading: '🎧'
-};
-
-const collectionEmojiMap = {
-  'new-collection': '🌟',
-  climate: '🌤️',
-  design: '🎨',
-  literature: '📖'
-};
-
-const classificationEmojiMap = {
-  X4: '🌊',
-  X5: '🏙️',
-  F2: '🏛️',
-  F49: '🔋',
-  TU201: '🏗️',
-  TB472: '🎨',
-  'TB472.1': '🧩',
-  I2067: '📖',
-  I227: '🎴',
-  I267: '📝'
-};
-
-const enrichmentLabels = {
-  complete: { en: 'Complete', zh: '已完成' },
-  inprogress: { en: 'In Progress', zh: '进行中' },
-  queued: { en: 'Queued', zh: '排队中' },
-  failed: { en: 'Failed', zh: '失败' }
-};
-
-const classificationOptions = ['X4', 'X5', 'F2', 'F49', 'TU201', 'TB472', 'TB472.1', 'I2067', 'I227', 'I267'];
-
-const formatOptions = ['pdf', 'epub', 'mobi', 'docx', 'txt', 'azw3'];
-
-const directoryOptions = [
-  {
-    id: 'handbooks',
-    path: '/Volumes/Research/Climate-Handbooks',
-    helper: 'Shared folder mounted from NAS',
-    lastIndexed: '2024-05-22T08:30:00Z'
-  },
-  {
-    id: 'ipcc',
-    path: '/Users/alex/Documents/IPCC-AR6',
-    helper: 'Downloaded assessment reports',
-    lastIndexed: '2024-05-20T10:02:00Z'
-  },
-  {
-    id: 'design-system',
-    path: 'D:/Libraries/Design-Systems',
-    helper: 'Sketches, PDFs, and pattern audits',
-    lastIndexed: '2024-04-28T14:10:00Z'
-  },
-  {
-    id: 'literature',
-    path: '/Volumes/Archive/Modern-Literature',
-    helper: 'Digitised literary anthologies',
-    lastIndexed: '2024-05-12T21:40:00Z'
+let bootstrapData = {};
+if (window.api?.bootstrap) {
+  try {
+    bootstrapData = (await window.api.bootstrap()) || {};
+  } catch (error) {
+    console.error('Failed to load bootstrap data', error);
   }
-];
+} else {
+  console.warn('Bootstrap API is not available.');
+}
 
-const initialCollectionMetadata = {
-  climate: {
-    directories: ['/Volumes/Research/Climate-Handbooks', '/Users/alex/Documents/IPCC-AR6'],
-    lastScan: '2024-06-02T10:30:00Z',
-    pagination: 20,
-    aiEnabled: true
-  },
-  design: {
-    directories: ['D:/Libraries/Design-Systems', 'D:/Libraries/Accessibility-Guides'],
-    lastScan: '2024-05-28T18:20:00Z',
-    pagination: 12,
-    aiEnabled: true
-  },
-  literature: {
-    directories: ['/Volumes/Archive/Modern-Literature'],
-    lastScan: '2024-06-04T09:05:00Z',
-    pagination: 50,
-    aiEnabled: true
-  }
+const translations = bootstrapData.translations || {};
+
+const supportedCoverTypes = bootstrapData.supportedCoverTypes || ['image/png', 'image/jpeg', 'image/webp'];
+
+const classificationCatalog = bootstrapData.classificationCatalog || {};
+const formatCatalog = bootstrapData.formatCatalog || {};
+const statEmojiMap = bootstrapData.statEmojiMap || {};
+const collectionEmojiMap = bootstrapData.collectionEmojiMap || {};
+const classificationEmojiMap = bootstrapData.classificationEmojiMap || {};
+const enrichmentLabels = bootstrapData.enrichmentLabels || {};
+
+const classificationOptions =
+  Array.isArray(bootstrapData.classificationOptions) && bootstrapData.classificationOptions.length
+    ? bootstrapData.classificationOptions
+    : Object.keys(classificationCatalog);
+
+const formatOptions =
+  Array.isArray(bootstrapData.formatOptions) && bootstrapData.formatOptions.length
+    ? bootstrapData.formatOptions
+    : Object.keys(formatCatalog);
+
+const directoryOptions = Array.isArray(bootstrapData.directoryOptions) ? bootstrapData.directoryOptions : [];
+
+const initialCollectionMetadata = bootstrapData.initialCollectionMetadata || {};
+const initialCollectionBooks = bootstrapData.initialCollectionBooks || {};
+const defaultSettingsFallback = {
+  metadataSources: 'Douban, OpenLibrary',
+  apiKey: '',
+  rateLimit: 60,
+  proxy: '',
+  cachePath: '~/Library Application Support/LocalBookshelf/covers',
+  previewPath: '~/Library Application Support/LocalBookshelf/previews',
+  embeddingsPath: '~/Library Application Support/LocalBookshelf/embeddings',
+  paginationDefault: 20,
+  theme: 'system',
+  analytics: true,
+  offline: false
 };
+const initialSettings = { ...defaultSettingsFallback, ...(bootstrapData.initialSettings || {}) };
 
-const initialCollectionBooks = {
-  climate: [
-    {
-      id: 'climate-1',
-      title: 'Resilient Cities 2040',
-      author: 'Mara Liang',
-      classification: 'X5',
-      publicationYear: 2024,
-      format: 'pdf',
-      sizeMB: 18.4,
-      dateAdded: '2024-05-18',
-      enrichment: 'complete',
-      pages: 328,
-      progress: { currentPage: 215 },
-      isbn: '978-0-12-864302-1',
-      summary: 'Action playbook for municipal adaptation projects across coastal regions.',
-      preview:
-        'Chapter 7 synthesises community-led design sprints with parametric flood models, outlining a replicable strategy for mid-sized cities.',
-      bookmarks: [64, 214],
-      tts: true,
-      exportable: true
-    },
-    {
-      id: 'climate-2',
-      title: 'Policy Pathways for Net-Zero Provinces',
-      author: 'Dr. Felix Noor',
-      classification: 'F2',
-      publicationYear: 2022,
-      format: 'epub',
-      sizeMB: 6.2,
-      dateAdded: '2024-04-11',
-      enrichment: 'inprogress',
-      pages: 412,
-      progress: { currentPage: 87 },
-      isbn: '978-1-4028-9462-9',
-      summary: 'Comparative policy toolkit aligning provincial statutes with national carbon commitments.',
-      preview:
-        'Section 3.2 analyses differentiated responsibilities across heavy industry clusters with annotated case law.',
-      bookmarks: [23, 198],
-      tts: true,
-      exportable: true
-    },
-    {
-      id: 'climate-3',
-      title: 'Ocean Heat Budget Explorer',
-      author: 'IPCC Working Group I',
-      classification: 'X4',
-      publicationYear: 2023,
-      format: 'pdf',
-      sizeMB: 52.7,
-      dateAdded: '2024-03-07',
-      enrichment: 'complete',
-      pages: 512,
-      progress: { currentPage: 132 },
-      isbn: '978-0-321-87777-4',
-      summary: 'High-resolution datasets and visualisations for ocean heat content analysis.',
-      preview:
-        'Appendix D introduces a methodology for downscaling CMIP6 outputs with GPU-accelerated interpolation.',
-      bookmarks: [112, 256, 401],
-      tts: false,
-      exportable: true
-    },
-    {
-      id: 'climate-4',
-      title: 'Distributed Energy Retrofit Manual',
-      author: 'Helena Ortiz',
-      classification: 'F49',
-      publicationYear: 2021,
-      format: 'docx',
-      sizeMB: 9.1,
-      dateAdded: '2024-02-19',
-      enrichment: 'queued',
-      pages: 226,
-      progress: { currentPage: 34 },
-      isbn: '978-0-452-29078-6',
-      summary: 'Practical guidance for retrofitting mid-rise buildings with hybrid solar microgrids.',
-      preview:
-        'Workbook templates cover financial modelling, procurement sequencing, and occupant engagement scripts.',
-      bookmarks: [48],
-      tts: true,
-      exportable: true
-    }
-  ],
-  design: [
-    {
-      id: 'design-1',
-      title: 'Multi-Platform Design Tokens',
-      author: 'Lina Osei',
-      classification: 'TB472.1',
-      publicationYear: 2023,
-      format: 'pdf',
-      sizeMB: 12.2,
-      dateAdded: '2024-05-01',
-      enrichment: 'complete',
-      pages: 280,
-      progress: { currentPage: 144 },
-      isbn: '978-0-07-352343-1',
-      summary: 'Unified token taxonomy bridging web, desktop, and native mobile design systems.',
-      preview:
-        'The alignment matrix maps each decision token to platform accessibility requirements with traceable histories.',
-      bookmarks: [56, 233],
-      tts: true,
-      exportable: true
-    },
-    {
-      id: 'design-2',
-      title: 'Inclusive Motion Guidelines',
-      author: 'Yuko Nishimura',
-      classification: 'TB472',
-      publicationYear: 2020,
-      format: 'pdf',
-      sizeMB: 4.8,
-      dateAdded: '2024-04-16',
-      enrichment: 'complete',
-      pages: 164,
-      progress: { currentPage: 98 },
-      isbn: '978-0-12-549080-2',
-      summary: 'Framework for designing motion systems that respect vestibular comfort and localisation.',
-      preview:
-        'Case studies demonstrate velocity envelopes and offer CSS/SwiftUI code recipes to ship responsibly.',
-      bookmarks: [34, 88, 129],
-      tts: true,
-      exportable: true
-    },
-    {
-      id: 'design-3',
-      title: 'Operational Playbook for DesignOps',
-      author: 'Carlos Mendes',
-      classification: 'TB472',
-      publicationYear: 2021,
-      format: 'epub',
-      sizeMB: 5.6,
-      dateAdded: '2024-03-08',
-      enrichment: 'inprogress',
-      pages: 312,
-      progress: { currentPage: 201 },
-      isbn: '978-0-7637-2026-6',
-      summary: 'Roadmap for scaling design systems governance with measurable service levels.',
-      preview:
-        'The service blueprint highlights intake triage, triads, and backlog analytics for distributed teams.',
-      bookmarks: [76, 240],
-      tts: true,
-      exportable: true
-    },
-    {
-      id: 'design-4',
-      title: 'Accessibility Compliance Field Notes',
-      author: 'Priya Venkataraman',
-      classification: 'TB472',
-      publicationYear: 2019,
-      format: 'docx',
-      sizeMB: 3.4,
-      dateAdded: '2024-02-14',
-      enrichment: 'complete',
-      pages: 198,
-      progress: { currentPage: 45 },
-      isbn: '978-0-13-466535-4',
-      summary: 'Annotated checklist mapping WCAG 2.2 success criteria to practical inspection routines.',
-      preview:
-        'Field observations catalogue recurring defects and remediation scripts used by enterprise auditors.',
-      bookmarks: [18, 172],
-      tts: true,
-      exportable: true
-    }
-  ],
-  literature: [
-    {
-      id: 'literature-1',
-      title: 'Midnight Courtyard',
-      author: 'Han Yuerong',
-      classification: 'I2067',
-      publicationYear: 2018,
-      format: 'epub',
-      sizeMB: 2.3,
-      dateAdded: '2024-05-30',
-      enrichment: 'complete',
-      pages: 296,
-      progress: { currentPage: 186 },
-      isbn: '978-7-5321-6783-4',
-      summary: 'Interwoven narratives exploring urban solitude and resilience in Shanghai.',
-      preview:
-        'Chapter 12 juxtaposes architectural memories with present-day dialogues, inviting reflective annotation.',
-      bookmarks: [45, 132, 205],
-      tts: true,
-      exportable: true
-    },
-    {
-      id: 'literature-2',
-      title: 'Letters to the South Wind',
-      author: 'Qiu Ansheng',
-      classification: 'I267',
-      publicationYear: 2020,
-      format: 'pdf',
-      sizeMB: 7.9,
-      dateAdded: '2024-04-22',
-      enrichment: 'complete',
-      pages: 224,
-      progress: { currentPage: 44 },
-      isbn: '978-7-5366-9860-2',
-      summary: 'Literary reportage blending climate narratives with personal field diaries.',
-      preview:
-        'Essays weave metaphors from typhoon tracking data and oral histories collected along the coast.',
-      bookmarks: [38, 110],
-      tts: true,
-      exportable: true
-    },
-    {
-      id: 'literature-3',
-      title: 'Echoes on Lushan Trail',
-      author: 'Zhang Mingwei',
-      classification: 'I227',
-      publicationYear: 2015,
-      format: 'pdf',
-      sizeMB: 3.1,
-      dateAdded: '2024-03-19',
-      enrichment: 'inprogress',
-      pages: 168,
-      progress: { currentPage: 98 },
-      isbn: '978-7-5302-9342-7',
-      summary: 'Bilingual poetry sequence inspired by misty mornings in Jiangxi.',
-      preview:
-        'Bamboo stanza forms echo classical cadences while layering contemporary environmental imagery.',
-      bookmarks: [12, 97, 146],
-      tts: true,
-      exportable: true
-    },
-    {
-      id: 'literature-4',
-      title: 'Oral Histories of the Pearl Delta',
-      author: 'Luo Jia',
-      classification: 'I267',
-      publicationYear: 2017,
-      format: 'txt',
-      sizeMB: 1.1,
-      dateAdded: '2024-02-02',
-      enrichment: 'complete',
-      pages: 342,
-      progress: { currentPage: 276 },
-      isbn: '978-7-108-06618-2',
-      summary: 'First-person recollections documenting delta transformations across generations.',
-      preview:
-        'Transcripts reveal dialect variations and migratory patterns, with inline translator annotations.',
-      bookmarks: [64, 241, 322],
-      tts: true,
-      exportable: true
-    }
-  ]
+const defaultWizardTemplate = bootstrapData.defaultWizardData || {};
+const defaultWizardData = {
+  mode: defaultWizardTemplate.mode || 'create',
+  targetId: defaultWizardTemplate.targetId ?? null,
+  paths: Array.isArray(defaultWizardTemplate.paths) ? [...defaultWizardTemplate.paths] : [],
+  name: defaultWizardTemplate.name || '',
+  description: defaultWizardTemplate.description || '',
+  coverName: defaultWizardTemplate.coverName || '',
+  coverFile: null
 };
 
 const initialBookmarks = Object.values(initialCollectionBooks)
@@ -380,34 +79,13 @@ const initialPreviewStates = Object.values(initialCollectionBooks)
     return map;
   }, {});
 
-const initialSettings = {
-  metadataSources: 'Douban, OpenLibrary',
-  apiKey: '',
-  rateLimit: 60,
-  proxy: '',
-  cachePath: '~/Library/Application Support/LocalBookshelf/covers',
-  previewPath: '~/Library/Application Support/LocalBookshelf/previews',
-  embeddingsPath: '~/Library/Application Support/LocalBookshelf/embeddings',
-  paginationDefault: 20,
-  theme: 'system',
-  analytics: true,
-  offline: false
-};
+const availableLocales = Object.keys(translations);
+const defaultLocale = availableLocales.includes('en') ? 'en' : availableLocales[0] || 'en';
 
-let jobCounter = 0;
-
-const defaultWizardData = {
-  mode: 'create',
-  targetId: null,
-  paths: [],
-  name: '',
-  description: '',
-  coverName: '',
-  coverFile: null
-};
+const root = document.getElementById('root');
 
 const state = {
-  locale: 'en',
+  locale: defaultLocale,
   showWizard: false,
   wizardStep: 0,
   wizardData: { ...defaultWizardData },
@@ -673,7 +351,7 @@ function createElement(tag, options = {}) {
 }
 
 function getPack() {
-  return translations[state.locale];
+  return translations[state.locale] || translations.en || Object.values(translations)[0] || {};
 }
 
 function formatDate(dateString) {
@@ -2887,6 +2565,80 @@ function renderSettingsPage(pack) {
   readerGroup.appendChild(themeSelect);
   readerGroup.appendChild(analyticsToggle);
   readerGroup.appendChild(offlineToggle);
+
+  let systemGroup = null;
+  if (pack.settings.system) {
+    systemGroup = createElement('div', { className: 'settings-group system-group' });
+    systemGroup.appendChild(createElement('h3', { text: pack.settings.system.title }));
+    systemGroup.appendChild(createElement('p', { className: 'settings-helper', text: pack.settings.system.helper }));
+
+    const systemActions = createElement('div', { className: 'system-actions' });
+
+    const initializeButton = createElement('button', {
+      className: 'ghost-button danger',
+      text: `🧹 ${pack.settings.system.initialize}`
+    });
+    initializeButton.type = 'button';
+    initializeButton.addEventListener('click', async () => {
+      if (!window.confirm(pack.settings.system.initializeConfirm)) {
+        return;
+      }
+      if (!window.api?.initializeSystem) {
+        showToast(pack.settings.system.initializeFailure);
+        return;
+      }
+      initializeButton.disabled = true;
+      try {
+        const result = await window.api.initializeSystem();
+        if (result?.success) {
+          showToast(pack.settings.system.initializeSuccess);
+          setTimeout(() => {
+            window.location.reload();
+          }, 800);
+        } else {
+          showToast(pack.settings.system.initializeFailure);
+        }
+      } catch (error) {
+        console.error('Failed to initialize system', error);
+        showToast(pack.settings.system.initializeFailure);
+      } finally {
+        initializeButton.disabled = false;
+      }
+    });
+
+    const backupButton = createElement('button', {
+      className: 'ghost-button',
+      text: `💾 ${pack.settings.system.backup}`
+    });
+    backupButton.type = 'button';
+    backupButton.addEventListener('click', async () => {
+      if (!window.api?.backupSystem) {
+        showToast(pack.settings.system.backupFailure);
+        return;
+      }
+      backupButton.disabled = true;
+      try {
+        const result = await window.api.backupSystem();
+        if (result?.success && result.path) {
+          const message = (pack.settings.system.backupSuccess || '').replace('{path}', result.path);
+          showToast(message);
+        } else if (result?.cancelled) {
+          showToast(pack.settings.system.backupCanceled);
+        } else {
+          showToast(pack.settings.system.backupFailure);
+        }
+      } catch (error) {
+        console.error('Failed to back up system', error);
+        showToast(pack.settings.system.backupFailure);
+      } finally {
+        backupButton.disabled = false;
+      }
+    });
+
+    systemActions.appendChild(initializeButton);
+    systemActions.appendChild(backupButton);
+    systemGroup.appendChild(systemActions);
+  }
   const actions = createElement('div', { className: 'settings-actions' });
   const backButton = createElement('button', { className: 'ghost-button', text: pack.wizard.cancel });
   backButton.type = 'button';
@@ -2902,6 +2654,9 @@ function renderSettingsPage(pack) {
   panel.appendChild(metadataGroup);
   panel.appendChild(storageGroup);
   panel.appendChild(readerGroup);
+  if (systemGroup) {
+    panel.appendChild(systemGroup);
+  }
   panel.appendChild(actions);
   page.appendChild(panel);
   return page;
