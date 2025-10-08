@@ -5,16 +5,16 @@ const root = document.getElementById('root');
 const supportedCoverTypes = ['image/png', 'image/jpeg', 'image/webp'];
 
 const classificationCatalog = {
-  'climate.adaptation': { en: 'Climate Adaptation', zh: '气候适应' },
-  'climate.policy': { en: 'Climate Policy', zh: '气候政策' },
-  'climate.science': { en: 'Earth System Science', zh: '地球系统科学' },
-  'climate.energy': { en: 'Energy Transition', zh: '能源转型' },
-  'design.systems': { en: 'Design Systems', zh: '设计系统' },
-  'design.process': { en: 'Product Process', zh: '产品流程' },
-  'design.accessibility': { en: 'Accessibility', zh: '无障碍' },
-  'literature.fiction': { en: 'Modern Fiction', zh: '现代小说' },
-  'literature.poetry': { en: 'Poetry', zh: '诗歌' },
-  'literature.essay': { en: 'Essay & Critique', zh: '随笔与评论' }
+  X4: { en: 'X4 Environmental Science Fundamentals', zh: 'X4 环境科学基础理论' },
+  X5: { en: 'X5 Environmental Protection Planning', zh: 'X5 环境保护规划与评价' },
+  F2: { en: 'F2 National Economy Management', zh: 'F2 国民经济管理' },
+  F49: { en: 'F49 Energy Economics', zh: 'F49 能源经济' },
+  TU201: { en: 'TU201 Urban Planning Theory', zh: 'TU201 城市规划理论' },
+  TB472: { en: 'TB472 Industrial Design', zh: 'TB472 工业设计' },
+  'TB472.1': { en: 'TB472.1 Design Systems', zh: 'TB472.1 设计系统' },
+  I2067: { en: 'I206.7 Modern Chinese Fiction', zh: 'I206.7 现代小说' },
+  I227: { en: 'I227 Poetry', zh: 'I227 诗歌' },
+  I267: { en: 'I267 Essays & Reportage', zh: 'I267 散文·随笔' }
 };
 
 const formatCatalog = {
@@ -41,16 +41,16 @@ const collectionEmojiMap = {
 };
 
 const classificationEmojiMap = {
-  'climate.adaptation': '🏙️',
-  'climate.policy': '📜',
-  'climate.science': '🌊',
-  'climate.energy': '🔋',
-  'design.systems': '🧩',
-  'design.process': '🛠️',
-  'design.accessibility': '♿',
-  'literature.fiction': '🕯️',
-  'literature.poetry': '🎴',
-  'literature.essay': '📝'
+  X4: '🌊',
+  X5: '🏙️',
+  F2: '🏛️',
+  F49: '🔋',
+  TU201: '🏗️',
+  TB472: '🎨',
+  'TB472.1': '🧩',
+  I2067: '📖',
+  I227: '🎴',
+  I267: '📝'
 };
 
 const enrichmentLabels = {
@@ -60,18 +60,7 @@ const enrichmentLabels = {
   failed: { en: 'Failed', zh: '失败' }
 };
 
-const classificationOptions = [
-  'climate.adaptation',
-  'climate.policy',
-  'climate.science',
-  'climate.energy',
-  'design.systems',
-  'design.process',
-  'design.accessibility',
-  'literature.fiction',
-  'literature.poetry',
-  'literature.essay'
-];
+const classificationOptions = ['X4', 'X5', 'F2', 'F49', 'TU201', 'TB472', 'TB472.1', 'I2067', 'I227', 'I267'];
 
 const formatOptions = ['pdf', 'epub', 'mobi', 'docx', 'txt', 'azw3'];
 
@@ -129,7 +118,7 @@ const initialCollectionBooks = {
       id: 'climate-1',
       title: 'Resilient Cities 2040',
       author: 'Mara Liang',
-      classification: 'climate.adaptation',
+      classification: 'X5',
       publicationYear: 2024,
       format: 'pdf',
       sizeMB: 18.4,
@@ -149,7 +138,7 @@ const initialCollectionBooks = {
       id: 'climate-2',
       title: 'Policy Pathways for Net-Zero Provinces',
       author: 'Dr. Felix Noor',
-      classification: 'climate.policy',
+      classification: 'F2',
       publicationYear: 2022,
       format: 'epub',
       sizeMB: 6.2,
@@ -169,7 +158,7 @@ const initialCollectionBooks = {
       id: 'climate-3',
       title: 'Ocean Heat Budget Explorer',
       author: 'IPCC Working Group I',
-      classification: 'climate.science',
+      classification: 'X4',
       publicationYear: 2023,
       format: 'pdf',
       sizeMB: 52.7,
@@ -189,7 +178,7 @@ const initialCollectionBooks = {
       id: 'climate-4',
       title: 'Distributed Energy Retrofit Manual',
       author: 'Helena Ortiz',
-      classification: 'climate.energy',
+      classification: 'F49',
       publicationYear: 2021,
       format: 'docx',
       sizeMB: 9.1,
@@ -211,7 +200,7 @@ const initialCollectionBooks = {
       id: 'design-1',
       title: 'Multi-Platform Design Tokens',
       author: 'Lina Osei',
-      classification: 'design.systems',
+      classification: 'TB472.1',
       publicationYear: 2023,
       format: 'pdf',
       sizeMB: 12.2,
@@ -231,7 +220,7 @@ const initialCollectionBooks = {
       id: 'design-2',
       title: 'Inclusive Motion Guidelines',
       author: 'Yuko Nishimura',
-      classification: 'design.accessibility',
+      classification: 'TB472',
       publicationYear: 2020,
       format: 'pdf',
       sizeMB: 4.8,
@@ -251,7 +240,7 @@ const initialCollectionBooks = {
       id: 'design-3',
       title: 'Operational Playbook for DesignOps',
       author: 'Carlos Mendes',
-      classification: 'design.process',
+      classification: 'TB472',
       publicationYear: 2021,
       format: 'epub',
       sizeMB: 5.6,
@@ -271,7 +260,7 @@ const initialCollectionBooks = {
       id: 'design-4',
       title: 'Accessibility Compliance Field Notes',
       author: 'Priya Venkataraman',
-      classification: 'design.accessibility',
+      classification: 'TB472',
       publicationYear: 2019,
       format: 'docx',
       sizeMB: 3.4,
@@ -293,7 +282,7 @@ const initialCollectionBooks = {
       id: 'literature-1',
       title: 'Midnight Courtyard',
       author: 'Han Yuerong',
-      classification: 'literature.fiction',
+      classification: 'I2067',
       publicationYear: 2018,
       format: 'epub',
       sizeMB: 2.3,
@@ -313,7 +302,7 @@ const initialCollectionBooks = {
       id: 'literature-2',
       title: 'Letters to the South Wind',
       author: 'Qiu Ansheng',
-      classification: 'literature.essay',
+      classification: 'I267',
       publicationYear: 2020,
       format: 'pdf',
       sizeMB: 7.9,
@@ -333,7 +322,7 @@ const initialCollectionBooks = {
       id: 'literature-3',
       title: 'Echoes on Lushan Trail',
       author: 'Zhang Mingwei',
-      classification: 'literature.poetry',
+      classification: 'I227',
       publicationYear: 2015,
       format: 'pdf',
       sizeMB: 3.1,
@@ -353,7 +342,7 @@ const initialCollectionBooks = {
       id: 'literature-4',
       title: 'Oral Histories of the Pearl Delta',
       author: 'Luo Jia',
-      classification: 'literature.essay',
+      classification: 'I267',
       publicationYear: 2017,
       format: 'txt',
       sizeMB: 1.1,
@@ -442,7 +431,9 @@ const state = {
   jobs: [],
   toast: null,
   settings: { ...initialSettings },
-  activeScan: null
+  activeScan: null,
+  directoryEditor: null,
+  exportModal: null
 };
 
 const persistence = {
@@ -457,7 +448,16 @@ function serializeState() {
   const preferences = {};
   Object.entries(state.preferences || {}).forEach(([collectionId, preference]) => {
     preferences[collectionId] = {
-      ...preference,
+      viewMode: preference.viewMode,
+      pageSize: preference.pageSize,
+      page: preference.page,
+      search: preference.search,
+      classification: Array.from(preference.classification || []),
+      format: preference.format,
+      yearFrom: preference.yearFrom,
+      yearTo: preference.yearTo,
+      filtersCollapsed: preference.filtersCollapsed,
+      sort: preference.sort,
       selected: Array.from(preference.selected || [])
     };
   });
@@ -523,7 +523,10 @@ function applyPersistedState(persisted) {
     Object.entries(persisted.preferences).forEach(([collectionId, preference]) => {
       state.preferences[collectionId] = {
         ...preference,
-        selected: new Set(preference.selected || [])
+        selected: new Set(preference.selected || []),
+        classification: new Set(preference.classification || []),
+        filtersCollapsed:
+          typeof preference.filtersCollapsed === 'boolean' ? preference.filtersCollapsed : true
       };
     });
   }
@@ -733,6 +736,9 @@ function getClassificationEmoji(key) {
 function setActivePage(page) {
   state.activePage = page;
   if (page !== 'collection') {
+    state.directoryEditor = null;
+  }
+  if (page !== 'collection' && page !== 'preview') {
     state.selectedBookId = null;
     if (page === 'dashboard') {
       state.selectedCollectionId = null;
@@ -797,13 +803,25 @@ function ensurePreferences(collectionId) {
       pageSize: meta.pagination || state.settings.paginationDefault,
       page: 1,
       search: '',
-      classification: 'all',
+      classification: new Set(),
       format: 'all',
       yearFrom: 2000,
       yearTo: new Date().getFullYear(),
+      filtersCollapsed: true,
       selected: new Set(),
       sort: { column: 'title', direction: 'asc' }
     };
+  } else {
+    const preference = state.preferences[collectionId];
+    if (!(preference.classification instanceof Set)) {
+      preference.classification = new Set(preference.classification || []);
+    }
+    if (!(preference.selected instanceof Set)) {
+      preference.selected = new Set(preference.selected || []);
+    }
+    if (typeof preference.filtersCollapsed !== 'boolean') {
+      preference.filtersCollapsed = true;
+    }
   }
   return state.preferences[collectionId];
 }
@@ -836,6 +854,7 @@ function getBookmarks(bookId) {
 
 function setSelectedCollection(collectionId) {
   state.selectedCollectionId = collectionId;
+  state.directoryEditor = null;
   state.activePage = 'collection';
   const books = getBooks(collectionId);
   if (books.length) {
@@ -858,6 +877,9 @@ function setSelectedBook(bookId) {
     preview.zoom = 1;
     preview.fit = 'width';
   }
+  if (state.selectedCollectionId) {
+    state.activePage = 'preview';
+  }
   renderApp();
 }
 
@@ -869,6 +891,146 @@ function findBookById(bookId) {
     }
   }
   return null;
+}
+
+function openDirectoryEditor(collectionId) {
+  const meta = state.collectionMeta[collectionId] || { directories: [] };
+  state.directoryEditor = {
+    collectionId,
+    value: (meta.directories || []).join('\n'),
+    rescan: false
+  };
+  renderApp();
+}
+
+function closeDirectoryEditor() {
+  state.directoryEditor = null;
+  renderApp();
+}
+
+function saveDirectoryEditor() {
+  const editor = state.directoryEditor;
+  if (!editor) {
+    return;
+  }
+  const collectionId = editor.collectionId;
+  const raw = editor.value
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  state.collectionMeta[collectionId] = state.collectionMeta[collectionId] || {};
+  state.collectionMeta[collectionId].directories = raw;
+  const overrides = state.collectionOverrides[collectionId] || {};
+  state.collectionOverrides[collectionId] = { ...overrides, paths: [...raw] };
+  state.directoryEditor = null;
+  const pack = getPack();
+  showToast(pack.collectionDetail.directorySaved);
+  renderApp();
+  if (editor.rescan) {
+    const display = getCollectionDisplay(collectionId);
+    createJob({
+      type: 'scan',
+      collectionId,
+      label: `${display?.title || collectionId} · Rescan`,
+      onComplete: () => {
+        state.collectionMeta[collectionId] = state.collectionMeta[collectionId] || {};
+        state.collectionMeta[collectionId].lastScan = new Date().toISOString();
+        showToast(pack.collectionDetail.rescanCompleted);
+        renderApp();
+      }
+    });
+  }
+}
+
+function refreshMetadata(collectionId, bookIds = []) {
+  if (!collectionId) {
+    return;
+  }
+  const books = getBooks(collectionId);
+  const targets = Array.isArray(bookIds) && bookIds.length ? books.filter((book) => bookIds.includes(book.id)) : books;
+  if (!targets.length) {
+    return;
+  }
+  const startedAt = new Date();
+  targets.forEach((book) => {
+    book.enrichment = 'inprogress';
+    book.metadataUpdatedAt = startedAt.toISOString();
+  });
+  renderApp();
+  const pack = getPack();
+  const display = getCollectionDisplay(collectionId);
+
+  let index = 0;
+  const tickUpdate = () => {
+    if (index >= targets.length) {
+      return;
+    }
+    const book = targets[index];
+    book.sizeMB = Number((book.sizeMB * (0.95 + Math.random() * 0.1)).toFixed(1));
+    book.summary = `${book.summary.replace(/\s+$/, '')} ${
+      state.locale === 'zh' ? '（元数据检查中…）' : '(Metadata refreshing…)'
+    }`;
+    renderApp();
+    index += 1;
+    setTimeout(tickUpdate, 400 + Math.random() * 300);
+  };
+  tickUpdate();
+
+  createJob({
+    type: 'enrichment',
+    collectionId,
+    label: `${display?.title || collectionId} · Metadata refresh`,
+    onComplete: () => {
+      const stamp = new Date();
+      const stampText = stamp.toLocaleString(state.locale === 'zh' ? 'zh-CN' : 'en-US');
+      targets.forEach((book) => {
+        book.enrichment = 'complete';
+        book.metadataUpdatedAt = stamp.toISOString();
+        const interimRemoved = book.summary
+          .replace(/\s*\(Metadata refreshing…\)$/u, '')
+          .replace(/[（(]元数据检查中…[）)]?$/u, '')
+          .trim();
+        const cleaned = interimRemoved
+          .replace(/\s*\(Metadata refreshed .*\)$/u, '')
+          .replace(/\s*（.+?已刷新元数据）$/u, '')
+          .replace(/\s*（元数据检查中…）$/u, '')
+          .trim();
+        const note = state.locale === 'zh'
+          ? `（${stampText} 已刷新元数据）`
+          : `(Metadata refreshed ${stampText})`;
+        const separator = cleaned.length ? (state.locale === 'zh' ? '' : ' ') : '';
+        book.summary = `${cleaned}${separator}${note}`.trim();
+      });
+      showToast(pack.collectionDetail.metadataUpdated);
+      renderApp();
+    }
+  });
+}
+
+function openExportModal(bookIds, collectionId = state.selectedCollectionId) {
+  const ids = Array.from(new Set(bookIds || [])).filter(Boolean);
+  if (!ids.length) {
+    return;
+  }
+  state.exportModal = {
+    collectionId: collectionId || state.selectedCollectionId,
+    bookIds: ids
+  };
+  state.exportState.status = 'idle';
+  state.exportState.progress = 0;
+  renderApp();
+}
+
+function closeExportModal() {
+  if (state.exportState.status === 'running') {
+    return;
+  }
+  state.exportModal = null;
+  if (state.exportState.status !== 'idle') {
+    state.exportState.status = 'idle';
+    state.exportState.progress = 0;
+  }
+  renderApp();
 }
 
 function doesCollectionNameExist(name, ignoreId = null) {
@@ -1268,11 +1430,18 @@ function renderBreadcrumbs(pack) {
     }
   ];
 
-  if (state.activePage === 'collection' && state.selectedCollectionId) {
+  if ((state.activePage === 'collection' || state.activePage === 'preview') && state.selectedCollectionId) {
     const display = getCollectionDisplay(state.selectedCollectionId);
     items.push({
       id: 'collection',
       label: `${getCollectionEmoji(state.selectedCollectionId)} ${display?.title || ''}`
+    });
+  }
+  if (state.activePage === 'preview') {
+    const book = findBookById(state.selectedBookId);
+    items.push({
+      id: 'preview',
+      label: `📖 ${book?.title || (state.locale === 'zh' ? '图书预览' : 'Preview')}`
     });
   } else if (state.activePage === 'monitor') {
     items.push({ id: 'monitor', label: `🛠️ ${pack.monitor.title}` });
@@ -1292,7 +1461,7 @@ function renderBreadcrumbs(pack) {
       button.title = item.ariaLabel;
     }
     button.addEventListener('click', () => {
-      if (item.id === 'collection' && !state.selectedCollectionId) {
+      if ((item.id === 'collection' || item.id === 'preview') && !state.selectedCollectionId) {
         return;
       }
       setActivePage(item.id);
@@ -1326,7 +1495,6 @@ function handleCollectionAction(collectionId, actionLabel) {
   const normalized = actionLabel.trim();
   const resumeLabels = [pack.collectionDetail.resumeReading, 'Resume Reading', '继续阅读'];
   const previewLabels = [pack.collectionDetail.cardActions.preview, 'Preview Library', '预览文库'];
-  const exportLabels = [pack.collectionDetail.cardActions.export, 'Export PDF Set', '批量导出 PDF'];
   const chatLabels = [pack.collectionDetail.cardActions.chat, 'Open AI Chat', '开启 AI 对话'];
   const editLabels = ['Edit', '编辑'];
   const rescanLabels = [pack.collectionDetail.rescan, '重新扫描'];
@@ -1337,11 +1505,6 @@ function handleCollectionAction(collectionId, actionLabel) {
   if (chatLabels.includes(normalized)) {
     setSelectedCollection(collectionId);
     ensureAiSession(collectionId);
-    return;
-  }
-  if (exportLabels.includes(normalized)) {
-    setSelectedCollection(collectionId);
-    startExport(getBooks(collectionId).map((book) => book.id));
     return;
   }
   if (editLabels.includes(normalized)) {
@@ -1440,22 +1603,15 @@ function renderCollectionPage(pack) {
   if (detail) {
     page.appendChild(detail);
   }
-  const experienceGrid = createElement('div', { className: 'experience-grid' });
-  const preview = renderPreviewPanel(pack);
-  if (preview) {
-    experienceGrid.appendChild(preview);
-  }
   const ai = renderAiPanel(pack);
   if (ai) {
-    experienceGrid.appendChild(ai);
-  }
-  if (experienceGrid.childElementCount) {
-    page.appendChild(experienceGrid);
+    page.appendChild(ai);
   }
   return page;
 }
 function renderFilters(collectionId, preferences, pack) {
-  const filters = createElement('div', { className: 'filters-panel' });
+  const filters = createElement('div', { className: 'filters-panel expanded' });
+  const searchSection = createElement('div', { className: 'filter-section search-section' });
   const searchInput = createElement('input', {
     className: 'search-input',
     attributes: { type: 'search', placeholder: pack.collectionDetail.searchPlaceholder }
@@ -1466,81 +1622,108 @@ function renderFilters(collectionId, preferences, pack) {
     preferences.page = 1;
     renderApp();
   });
+  searchSection.appendChild(searchInput);
+  filters.appendChild(searchSection);
 
-  const classificationSelect = createElement('select', { className: 'filter-select' });
-  const allOption = createElement('option', {
-    text: state.locale === 'zh' ? '全部分类' : 'All classifications'
+  const classificationSection = createElement('div', { className: 'filter-section classification-section' });
+  classificationSection.appendChild(
+    createElement('span', { className: 'filter-section-label', text: pack.collectionDetail.filters.classification })
+  );
+  const classificationGroup = createElement('div', { className: 'chip-group' });
+  const classificationClear = createElement('button', {
+    className: `filter-chip${preferences.classification?.size ? '' : ' active'}`,
+    text: state.locale === 'zh' ? '不限' : 'All'
   });
-  allOption.value = 'all';
-  classificationSelect.appendChild(allOption);
+  classificationClear.type = 'button';
+  classificationClear.addEventListener('click', () => {
+    preferences.classification.clear();
+    preferences.page = 1;
+    renderApp();
+  });
+  classificationGroup.appendChild(classificationClear);
   classificationOptions.forEach((option) => {
-    const node = createElement('option', { text: getClassificationLabel(option) });
-    node.value = option;
-    if (preferences.classification === option) {
-      node.selected = true;
-    }
-    classificationSelect.appendChild(node);
+    const chip = createElement('button', {
+      className: `filter-chip${preferences.classification?.has(option) ? ' active' : ''}`,
+      text: `${getClassificationLabel(option)}`
+    });
+    chip.type = 'button';
+    chip.addEventListener('click', () => {
+      if (preferences.classification.has(option)) {
+        preferences.classification.delete(option);
+      } else {
+        preferences.classification.add(option);
+      }
+      preferences.page = 1;
+      renderApp();
+    });
+    classificationGroup.appendChild(chip);
   });
-  classificationSelect.value = preferences.classification;
-  classificationSelect.addEventListener('change', (event) => {
-    preferences.classification = event.target.value;
+  classificationSection.appendChild(classificationGroup);
+  filters.appendChild(classificationSection);
+
+  const formatSection = createElement('div', { className: 'filter-section format-section' });
+  formatSection.appendChild(createElement('span', { className: 'filter-section-label', text: pack.collectionDetail.filters.format }));
+  const formatGroup = createElement('div', { className: 'chip-group' });
+  const formatClear = createElement('button', {
+    className: `filter-chip${preferences.format === 'all' ? ' active' : ''}`,
+    text: state.locale === 'zh' ? '全部' : 'All'
+  });
+  formatClear.type = 'button';
+  formatClear.addEventListener('click', () => {
+    preferences.format = 'all';
     preferences.page = 1;
     renderApp();
   });
-
-  const formatSelect = createElement('select', { className: 'filter-select' });
-  const allFormat = createElement('option', {
-    text: state.locale === 'zh' ? '全部格式' : 'All formats'
-  });
-  allFormat.value = 'all';
-  formatSelect.appendChild(allFormat);
+  formatGroup.appendChild(formatClear);
   formatOptions.forEach((option) => {
-    const node = createElement('option', { text: getFormatLabel(option) });
-    node.value = option;
-    if (preferences.format === option) {
-      node.selected = true;
-    }
-    formatSelect.appendChild(node);
+    const chip = createElement('button', {
+      className: `filter-chip${preferences.format === option ? ' active' : ''}`,
+      text: getFormatLabel(option)
+    });
+    chip.type = 'button';
+    chip.addEventListener('click', () => {
+      preferences.format = option;
+      preferences.page = 1;
+      renderApp();
+    });
+    formatGroup.appendChild(chip);
   });
-  formatSelect.value = preferences.format;
-  formatSelect.addEventListener('change', (event) => {
-    preferences.format = event.target.value;
-    preferences.page = 1;
-    renderApp();
-  });
+  formatSection.appendChild(formatGroup);
+  filters.appendChild(formatSection);
 
-  const yearContainer = createElement('div', { className: 'year-filter' });
+  const yearSection = createElement('div', { className: 'filter-section year-section' });
+  yearSection.appendChild(createElement('span', { className: 'filter-section-label', text: pack.collectionDetail.filters.publication }));
+  const yearInputs = createElement('div', { className: 'year-inputs' });
   const fromInput = createElement('input', {
+    className: 'year-input',
     attributes: { type: 'number', min: 1900, max: new Date().getFullYear() }
   });
   fromInput.value = preferences.yearFrom;
   fromInput.addEventListener('change', (event) => {
-    preferences.yearFrom = Number(event.target.value) || preferences.yearFrom;
+    const value = Number(event.target.value);
+    preferences.yearFrom = Number.isNaN(value) ? preferences.yearFrom : value;
     preferences.page = 1;
     renderApp();
   });
   const toInput = createElement('input', {
+    className: 'year-input',
     attributes: { type: 'number', min: 1900, max: new Date().getFullYear() }
   });
   toInput.value = preferences.yearTo;
   toInput.addEventListener('change', (event) => {
-    preferences.yearTo = Number(event.target.value) || preferences.yearTo;
+    const value = Number(event.target.value);
+    preferences.yearTo = Number.isNaN(value) ? preferences.yearTo : value;
     preferences.page = 1;
     renderApp();
   });
-  yearContainer.appendChild(createElement('label', { text: pack.collectionDetail.filters.publication }));
-  yearContainer.appendChild(
-    createElement('div', {
-      className: 'year-inputs',
-      children: [
-        createElement('span', { text: pack.collectionDetail.filters.from }),
-        fromInput,
-        createElement('span', { text: pack.collectionDetail.filters.to }),
-        toInput
-      ]
-    })
-  );
+  yearInputs.appendChild(createElement('span', { text: pack.collectionDetail.filters.from }));
+  yearInputs.appendChild(fromInput);
+  yearInputs.appendChild(createElement('span', { text: pack.collectionDetail.filters.to }));
+  yearInputs.appendChild(toInput);
+  yearSection.appendChild(yearInputs);
+  filters.appendChild(yearSection);
 
+  const footer = createElement('div', { className: 'filter-footer' });
   const resetButton = createElement('button', {
     className: 'ghost-button',
     text: pack.collectionDetail.filters.reset
@@ -1548,35 +1731,23 @@ function renderFilters(collectionId, preferences, pack) {
   resetButton.type = 'button';
   resetButton.addEventListener('click', () => {
     preferences.search = '';
-    preferences.classification = 'all';
+    preferences.classification.clear();
     preferences.format = 'all';
     preferences.yearFrom = 2000;
     preferences.yearTo = new Date().getFullYear();
     preferences.page = 1;
     renderApp();
   });
-
-  filters.appendChild(searchInput);
-  filters.appendChild(
-    createElement('div', {
-      className: 'filter-row',
-      children: [
-        createElement('label', { text: pack.collectionDetail.filters.classification }),
-        classificationSelect,
-        createElement('label', { text: pack.collectionDetail.filters.format }),
-        formatSelect,
-        yearContainer,
-        resetButton
-      ]
-    })
-  );
+  footer.appendChild(resetButton);
+  filters.appendChild(footer);
   return filters;
 }
 
 function applyBookFilters(books, preferences) {
   return books
     .filter((book) => {
-      if (preferences.classification !== 'all' && book.classification !== preferences.classification) {
+      const hasClassification = preferences.classification instanceof Set && preferences.classification.size > 0;
+      if (hasClassification && !preferences.classification.has(book.classification)) {
         return false;
       }
       if (preferences.format !== 'all' && book.format !== preferences.format) {
@@ -1686,7 +1857,10 @@ function renderCardView(books, preferences, pack) {
     previewButton.addEventListener('click', () => setSelectedBook(book.id));
     const exportButton = createElement('button', { text: pack.collectionDetail.cardActions.export });
     exportButton.type = 'button';
-    exportButton.addEventListener('click', () => startExport([book.id]));
+    exportButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openExportModal([book.id], state.selectedCollectionId);
+    });
     const chatButton = createElement('button', { text: pack.collectionDetail.cardActions.chat });
     chatButton.type = 'button';
     chatButton.addEventListener('click', () => {
@@ -1730,7 +1904,8 @@ function renderTableView(books, preferences, pack) {
     { key: 'format', label: pack.collectionDetail.tableHeaders[4] },
     { key: 'size', label: pack.collectionDetail.tableHeaders[5] },
     { key: 'dateAdded', label: pack.collectionDetail.tableHeaders[6] },
-    { key: 'enrichment', label: pack.collectionDetail.tableHeaders[7] }
+    { key: 'enrichment', label: pack.collectionDetail.tableHeaders[7] },
+    { key: 'actions', label: pack.collectionDetail.tableHeaders[8] }
   ];
 
   headers.forEach((header) => {
@@ -1767,22 +1942,50 @@ function renderTableView(books, preferences, pack) {
     checkboxCell.appendChild(checkbox);
     row.appendChild(checkboxCell);
 
-    const values = [
-      book.title,
-      book.author,
-      getClassificationLabel(book.classification),
-      book.publicationYear,
-      getFormatLabel(book.format),
-      formatSize(book.sizeMB),
-      formatDate(book.dateAdded),
-      getEnrichmentLabel(book.enrichment)
-    ];
-    values.forEach((value) => {
-      const cell = createElement('td', { text: value });
-      row.appendChild(cell);
+    const titleCell = createElement('td');
+    const titleButton = createElement('button', { className: 'link-button', text: book.title });
+    titleButton.type = 'button';
+    titleButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      setSelectedBook(book.id);
     });
+    titleCell.appendChild(titleButton);
+    row.appendChild(titleCell);
+
+    row.appendChild(createElement('td', { text: book.author }));
+    row.appendChild(createElement('td', { text: getClassificationLabel(book.classification) }));
+    row.appendChild(createElement('td', { text: `${book.publicationYear}` }));
+    row.appendChild(createElement('td', { text: getFormatLabel(book.format) }));
+    row.appendChild(createElement('td', { text: formatSize(book.sizeMB) }));
+    row.appendChild(createElement('td', { text: formatDate(book.dateAdded) }));
+    row.appendChild(createElement('td', { text: getEnrichmentLabel(book.enrichment) }));
+
+    const actionCell = createElement('td', { className: 'table-actions' });
+    const exportButton = createElement('button', {
+      className: 'ghost-button small',
+      text: pack.collectionDetail.cardActions.export
+    });
+    exportButton.type = 'button';
+    exportButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openExportModal([book.id], state.selectedCollectionId);
+    });
+    const chatButton = createElement('button', {
+      className: 'ghost-button small',
+      text: pack.collectionDetail.cardActions.chat
+    });
+    chatButton.type = 'button';
+    chatButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      ensureAiSession(state.selectedCollectionId);
+      sendAiMessage(state.selectedCollectionId, `${book.title} summary`);
+    });
+    actionCell.appendChild(exportButton);
+    actionCell.appendChild(chatButton);
+    row.appendChild(actionCell);
     row.addEventListener('click', (event) => {
-      if (event.target.tagName.toLowerCase() === 'input') {
+      const tag = event.target.tagName.toLowerCase();
+      if (tag === 'input' || tag === 'button') {
         return;
       }
       setSelectedBook(book.id);
@@ -1872,7 +2075,10 @@ function renderBulkActions(preferences, pack) {
     preferences.selected.clear();
     renderApp();
   });
-  const refresh = createElement('button', { text: pack.collectionDetail.bulkActions.refreshMetadata });
+  const refresh = createElement('button', {
+    className: 'primary-button',
+    text: pack.collectionDetail.bulkActions.refreshMetadata
+  });
   refresh.type = 'button';
   refresh.addEventListener('click', () => {
     const ids = Array.from(preferences.selected);
@@ -1880,33 +2086,26 @@ function renderBulkActions(preferences, pack) {
       showToast(state.locale === 'zh' ? '请选择至少一本书' : 'Select at least one book');
       return;
     }
-    const title = getCollectionDisplay(state.selectedCollectionId)?.title || '';
-    createJob({
-      type: 'enrichment',
-      collectionId: state.selectedCollectionId,
-      label: `${title} · Metadata refresh`,
-      onComplete: () => showToast(state.locale === 'zh' ? '元数据已刷新' : 'Metadata refreshed')
-    });
-  });
-  const exportButton = createElement('button', { text: pack.collectionDetail.bulkActions.export });
-  exportButton.type = 'button';
-  exportButton.addEventListener('click', () => {
-    const ids = Array.from(preferences.selected);
-    if (!ids.length) {
-      showToast(state.locale === 'zh' ? '请选择至少一本书' : 'Select at least one book');
-      return;
-    }
-    startExport(ids);
+    refreshMetadata(state.selectedCollectionId, ids);
   });
   container.appendChild(selectAll);
   container.appendChild(clear);
   container.appendChild(refresh);
-  container.appendChild(exportButton);
   return container;
 }
-function startExport(bookIds) {
-  if (!bookIds.length) {
+function startExport(bookIds, collectionId = state.selectedCollectionId) {
+  const ids = Array.from(new Set(bookIds && bookIds.length ? bookIds : state.exportModal?.bookIds || [])).filter(Boolean);
+  const targetCollection = collectionId || state.exportModal?.collectionId || state.selectedCollectionId;
+  if (!ids.length || !targetCollection) {
     return;
+  }
+  if (state.exportState.status === 'running') {
+    return;
+  }
+  const pack = getPack();
+  if (state.exportModal) {
+    state.exportModal.collectionId = targetCollection;
+    state.exportModal.bookIds = ids;
   }
   state.exportState.status = 'running';
   state.exportState.progress = 0;
@@ -1920,11 +2119,11 @@ function startExport(bookIds) {
       state.exportState.status = 'completed';
       createJob({
         type: 'export',
-        collectionId: state.selectedCollectionId,
-        label: `${bookIds.length} book(s)`,
+        collectionId: targetCollection,
+        label: `${ids.length} book(s)`,
         onComplete: () => {}
       });
-      showToast(state.locale === 'zh' ? '导出完成' : 'Export completed');
+      showToast(pack.exportDialog.completed);
       renderApp();
       return;
     }
@@ -1946,23 +2145,88 @@ function renderCollectionDetail(pack) {
   const books = applyBookFilters(getBooks(collectionId), preferences);
   const startIndex = (preferences.page - 1) * preferences.pageSize;
   const paginated = books.slice(startIndex, startIndex + preferences.pageSize);
+  const currentYear = new Date().getFullYear();
+
+  const activeFilters =
+    (preferences.classification?.size || 0) +
+    (preferences.search.trim() ? 1 : 0) +
+    (preferences.format !== 'all' ? 1 : 0) +
+    (preferences.yearFrom !== 2000 || preferences.yearTo !== currentYear ? 1 : 0);
 
   const section = createElement('section', { className: 'detail-section' });
-  const placeholderText = state.locale === 'zh' ? '封面预留' : 'Cover placeholder';
-  section.appendChild(createElement('div', { className: 'image-placeholder tall', text: placeholderText }));
-  section.appendChild(
+  const hero = createElement('div', { className: 'collection-hero' });
+  const info = createElement('div', { className: 'collection-hero-info' });
+  info.appendChild(
     createElement('h2', {
       text: `${getCollectionEmoji(collectionId)} ${pack.collectionDetail.titlePrefix}: ${display?.title || ''}`
     })
   );
-  section.appendChild(
+  info.appendChild(
     createElement('p', {
       className: 'detail-subtitle',
-      text: `${pack.collectionDetail.subtitle} · ${state.locale === 'zh' ? '最近扫描' : 'Last scan'}: ${formatDate(
-        meta.lastScan
-      )}`
+      text: `${pack.collectionDetail.subtitle} · ${pack.collectionDetail.lastScanLabel}: ${formatDate(meta.lastScan)}`
     })
   );
+
+  const directoriesContainer = createElement('div', { className: 'directory-container' });
+  directoriesContainer.appendChild(createElement('span', { className: 'directory-title', text: pack.collectionDetail.directories }));
+  const editorState = state.directoryEditor;
+  if (editorState && editorState.collectionId === collectionId) {
+    const textarea = createElement('textarea', {
+      className: 'directory-textarea',
+      attributes: {
+        rows: 4,
+        placeholder: pack.collectionDetail.directoryEditor.placeholder
+      }
+    });
+    textarea.value = editorState.value;
+    textarea.addEventListener('input', (event) => {
+      state.directoryEditor.value = event.target.value;
+    });
+    const rescanToggle = createElement('label', { className: 'rescan-toggle' });
+    const rescanInput = createElement('input', { attributes: { type: 'checkbox' } });
+    rescanInput.checked = !!editorState.rescan;
+    rescanInput.addEventListener('change', (event) => {
+      state.directoryEditor.rescan = event.target.checked;
+    });
+    rescanToggle.appendChild(rescanInput);
+    rescanToggle.appendChild(createElement('span', { text: pack.collectionDetail.directoryEditor.rescan }));
+    const editorActions = createElement('div', { className: 'directory-editor-actions' });
+    const cancelButton = createElement('button', {
+      className: 'ghost-button',
+      text: pack.collectionDetail.directoryEditor.cancel
+    });
+    cancelButton.type = 'button';
+    cancelButton.addEventListener('click', closeDirectoryEditor);
+    const saveButton = createElement('button', {
+      className: 'primary-button',
+      text: pack.collectionDetail.directoryEditor.save
+    });
+    saveButton.type = 'button';
+    saveButton.addEventListener('click', saveDirectoryEditor);
+    editorActions.appendChild(cancelButton);
+    editorActions.appendChild(saveButton);
+    directoriesContainer.appendChild(textarea);
+    directoriesContainer.appendChild(rescanToggle);
+    directoriesContainer.appendChild(editorActions);
+  } else {
+    if (meta.directories?.length) {
+      const list = createElement('ul', { className: 'directory-list' });
+      meta.directories.forEach((pathValue) => {
+        list.appendChild(createElement('li', { text: pathValue }));
+      });
+      directoriesContainer.appendChild(list);
+    } else {
+      directoriesContainer.appendChild(
+        createElement('p', { className: 'directory-empty', text: pack.collectionDetail.directoryEmpty })
+      );
+    }
+    const editButton = createElement('button', { className: 'ghost-button', text: pack.collectionDetail.editDirectories });
+    editButton.type = 'button';
+    editButton.addEventListener('click', () => openDirectoryEditor(collectionId));
+    directoriesContainer.appendChild(editButton);
+  }
+  info.appendChild(directoriesContainer);
 
   const actionRow = createElement('div', { className: 'detail-actions' });
   const rescan = createElement('button', { className: 'ghost-button', text: pack.collectionDetail.rescan });
@@ -1975,20 +2239,15 @@ function renderCollectionDetail(pack) {
       onComplete: () => {
         state.collectionMeta[collectionId] = state.collectionMeta[collectionId] || {};
         state.collectionMeta[collectionId].lastScan = new Date().toISOString();
-        showToast(state.locale === 'zh' ? '扫描已完成' : 'Scan completed');
+        showToast(pack.collectionDetail.rescanCompleted);
         renderApp();
       }
     });
   });
-  const refresh = createElement('button', { className: 'ghost-button', text: pack.collectionDetail.refresh });
+  const refresh = createElement('button', { className: 'primary-button', text: pack.collectionDetail.refresh });
   refresh.type = 'button';
   refresh.addEventListener('click', () => {
-    createJob({
-      type: 'enrichment',
-      collectionId,
-      label: `${display?.title || ''} · Metadata`,
-      onComplete: () => showToast(state.locale === 'zh' ? '元数据已刷新' : 'Metadata refreshed')
-    });
+    refreshMetadata(collectionId);
   });
   const chat = createElement('button', { className: 'ghost-button', text: pack.collectionDetail.openChat });
   chat.type = 'button';
@@ -1999,9 +2258,57 @@ function renderCollectionDetail(pack) {
   actionRow.appendChild(rescan);
   actionRow.appendChild(refresh);
   actionRow.appendChild(chat);
-  section.appendChild(actionRow);
+  info.appendChild(actionRow);
 
-  section.appendChild(renderFilters(collectionId, preferences, pack));
+  const side = createElement('div', { className: 'collection-hero-side' });
+  const placeholderText = state.locale === 'zh' ? '封面' : 'Cover';
+  side.appendChild(createElement('div', { className: 'image-placeholder avatar', text: placeholderText }));
+  const filterToggle = createElement('button', {
+    className: `filter-icon-button${preferences.filtersCollapsed ? ' collapsed' : ''}`,
+    text: '🎛️'
+  });
+  filterToggle.type = 'button';
+  filterToggle.setAttribute('aria-label', pack.collectionDetail.filtersToggle);
+  filterToggle.title = pack.collectionDetail.filtersToggle;
+  filterToggle.setAttribute('data-count', `${activeFilters}`);
+  filterToggle.addEventListener('click', () => {
+    preferences.filtersCollapsed = !preferences.filtersCollapsed;
+    renderApp();
+  });
+  side.appendChild(filterToggle);
+
+  hero.appendChild(info);
+  hero.appendChild(side);
+  section.appendChild(hero);
+
+  if (preferences.filtersCollapsed && activeFilters > 0) {
+    const summary = createElement('div', { className: 'filter-summary' });
+    summary.appendChild(createElement('span', { className: 'filter-summary-label', text: pack.collectionDetail.activeFilters }));
+    if (preferences.search.trim()) {
+      summary.appendChild(createElement('span', { className: 'filter-chip active', text: `🔍 ${preferences.search.trim()}` }));
+    }
+    if (preferences.classification?.size) {
+      preferences.classification.forEach((key) => {
+        summary.appendChild(createElement('span', { className: 'filter-chip active', text: getClassificationLabel(key) }));
+      });
+    }
+    if (preferences.format !== 'all') {
+      summary.appendChild(createElement('span', { className: 'filter-chip active', text: getFormatLabel(preferences.format) }));
+    }
+    if (preferences.yearFrom !== 2000 || preferences.yearTo !== currentYear) {
+      summary.appendChild(
+        createElement('span', {
+          className: 'filter-chip active',
+          text: `${preferences.yearFrom} - ${preferences.yearTo}`
+        })
+      );
+    }
+    section.appendChild(summary);
+  }
+
+  if (!preferences.filtersCollapsed) {
+    section.appendChild(renderFilters(collectionId, preferences, pack));
+  }
 
   const layoutToggle = createElement('div', { className: 'layout-toggle' });
   const cardButton = createElement('button', {
@@ -2038,25 +2345,10 @@ function renderCollectionDetail(pack) {
   return section;
 }
 
-function renderPreviewPanel(pack) {
-  const collectionId = state.selectedCollectionId;
-  if (!collectionId) {
-    return null;
-  }
-  const books = getBooks(collectionId);
-  if (!books.length) {
-    return null;
-  }
-  const book = books.find((item) => item.id === state.selectedBookId) || books[0];
-  const previewState = getPreviewState(book.id, book.progress?.currentPage || 1);
+function createPreviewSection(pack, book, previewState) {
   const panel = createElement('section', { className: 'preview-panel' });
   panel.appendChild(createElement('h3', { text: pack.previewPanel.title }));
-  panel.appendChild(
-    createElement('p', {
-      className: 'preview-meta',
-      text: `${book.title} · ${book.author} · ${getFormatLabel(book.format)} · ${formatSize(book.sizeMB)}`
-    })
-  );
+  panel.appendChild(createElement('p', { className: 'preview-summary', text: book.summary }));
 
   const controls = createElement('div', { className: 'preview-controls' });
   const zoomOut = createElement('button', { text: pack.previewPanel.zoomOut });
@@ -2068,7 +2360,7 @@ function renderPreviewPanel(pack) {
   const zoomIn = createElement('button', { text: pack.previewPanel.zoomIn });
   zoomIn.type = 'button';
   zoomIn.addEventListener('click', () => {
-    previewState.zoom = Math.min(2, previewState.zoom + 0.1);
+    previewState.zoom = Math.min(2.5, previewState.zoom + 0.1);
     renderApp();
   });
   const fitWidth = createElement('button', { text: pack.previewPanel.fitWidth });
@@ -2119,6 +2411,7 @@ function renderPreviewPanel(pack) {
 
   const bookmarks = getBookmarks(book.id);
   const bookmarkButton = createElement('button', {
+    className: 'ghost-button',
     text: bookmarks.has(previewState.page) ? pack.previewPanel.removeBookmark : pack.previewPanel.addBookmark
   });
   bookmarkButton.type = 'button';
@@ -2134,9 +2427,80 @@ function renderPreviewPanel(pack) {
   });
   panel.appendChild(bookmarkButton);
 
-  panel.appendChild(renderTtsPanel(pack, book));
-  panel.appendChild(renderExportPanel(pack, [book.id]));
   return panel;
+}
+
+function renderPreviewPage(pack) {
+  const collectionId = state.selectedCollectionId;
+  if (!collectionId) {
+    return renderDashboardPage(pack);
+  }
+  const books = getBooks(collectionId);
+  if (!books.length) {
+    setActivePage('collection');
+    return renderCollectionPage(pack);
+  }
+  const book = books.find((item) => item.id === state.selectedBookId) || books[0];
+  if (!book) {
+    setActivePage('collection');
+    return renderCollectionPage(pack);
+  }
+  state.selectedBookId = book.id;
+  const previewState = getPreviewState(book.id, book.progress?.currentPage || 1);
+
+  const page = createElement('main', { className: 'page preview-page' });
+  const header = createElement('div', { className: 'preview-header' });
+  const backButton = createElement('button', { className: 'ghost-button', text: pack.previewPanel.back });
+  backButton.type = 'button';
+  backButton.addEventListener('click', () => {
+    setActivePage('collection');
+  });
+  const titleGroup = createElement('div', { className: 'preview-title-group' });
+  titleGroup.appendChild(createElement('h2', { text: book.title }));
+  titleGroup.appendChild(
+    createElement('p', {
+      className: 'preview-subtitle',
+      text: `${book.author} · ${getClassificationLabel(book.classification)} · ${book.publicationYear}`
+    })
+  );
+  const headerActions = createElement('div', { className: 'preview-header-actions' });
+  const exportButton = createElement('button', { className: 'primary-button', text: pack.previewPanel.export });
+  exportButton.type = 'button';
+  exportButton.addEventListener('click', () => {
+    openExportModal([book.id], collectionId);
+  });
+  headerActions.appendChild(exportButton);
+  header.appendChild(backButton);
+  header.appendChild(titleGroup);
+  header.appendChild(headerActions);
+  page.appendChild(header);
+
+  const layout = createElement('div', { className: 'preview-layout' });
+  const mainColumn = createElement('div', { className: 'preview-main' });
+  mainColumn.appendChild(createPreviewSection(pack, book, previewState));
+  layout.appendChild(mainColumn);
+
+  const sideColumn = createElement('aside', { className: 'preview-side' });
+  sideColumn.appendChild(renderTtsPanel(pack, book));
+  const metadataCard = createElement('div', { className: 'preview-metadata' });
+  metadataCard.appendChild(createElement('h4', { text: pack.previewPanel.metadataTitle }));
+  metadataCard.appendChild(createElement('p', { text: `${pack.previewPanel.formatLabel}: ${getFormatLabel(book.format)}` }));
+  metadataCard.appendChild(createElement('p', { text: `${pack.previewPanel.sizeLabel}: ${formatSize(book.sizeMB)}` }));
+  metadataCard.appendChild(createElement('p', { text: `${pack.previewPanel.pagesLabel}: ${book.pages}` }));
+  metadataCard.appendChild(
+    createElement('p', {
+      text: `${pack.previewPanel.updatedLabel}: ${formatDate(book.metadataUpdatedAt || book.dateAdded)}`
+    })
+  );
+  sideColumn.appendChild(metadataCard);
+  layout.appendChild(sideColumn);
+  page.appendChild(layout);
+
+  const aiPanel = renderAiPanel(pack);
+  if (aiPanel) {
+    page.appendChild(aiPanel);
+  }
+  return page;
 }
 
 function renderTtsPanel(pack, book) {
@@ -2208,51 +2572,84 @@ function renderTtsPanel(pack, book) {
   return container;
 }
 
-function renderExportPanel(pack, bookIds) {
-  const container = createElement('div', { className: 'export-panel' });
-  container.appendChild(createElement('h4', { text: pack.exportPanel.title }));
+function renderExportModal(pack) {
+  if (!state.exportModal) {
+    return null;
+  }
+  const { bookIds } = state.exportModal;
+  const overlay = createElement('div', { className: 'modal-overlay export-overlay' });
+  const panel = createElement('div', { className: 'modal-panel export-modal' });
+  panel.appendChild(createElement('h3', { text: pack.exportDialog.title }));
+  panel.appendChild(
+    createElement('p', {
+      className: 'export-count',
+      text: pack.exportDialog.count.replace('{count}', bookIds.length)
+    })
+  );
+  panel.appendChild(createElement('p', { className: 'export-description', text: pack.exportDialog.subtitle }));
+
+  const destinationLabel = createElement('label', { text: pack.exportDialog.destination });
   const destinationInput = createElement('input', {
+    className: 'export-input',
     attributes: { type: 'text', value: state.exportState.destination }
   });
   destinationInput.addEventListener('change', (event) => {
     state.exportState.destination = event.target.value;
   });
-  const metadataToggle = createElement('label', { className: 'highlight-toggle' });
+  panel.appendChild(destinationLabel);
+  panel.appendChild(destinationInput);
+
+  const metadataToggle = createElement('label', { className: 'highlight-toggle export-toggle' });
   const metadataInput = createElement('input', { attributes: { type: 'checkbox' } });
   metadataInput.checked = state.exportState.includeMetadata;
   metadataInput.addEventListener('change', (event) => {
     state.exportState.includeMetadata = event.target.checked;
   });
   metadataToggle.appendChild(metadataInput);
-  metadataToggle.appendChild(createElement('span', { text: pack.exportPanel.metadataPage }));
+  metadataToggle.appendChild(createElement('span', { text: pack.exportDialog.metadata }));
+  panel.appendChild(metadataToggle);
 
-  const startButton = createElement('button', { text: pack.exportPanel.start });
-  startButton.type = 'button';
-  startButton.addEventListener('click', () => startExport(bookIds));
-
-  const progress = createElement('div', { className: 'progress-track' });
+  const progress = createElement('div', { className: 'progress-track export-progress' });
   const fill = createElement('div', {
     className: 'progress-fill',
     attributes: { style: `width: ${state.exportState.progress}%` }
   });
   progress.appendChild(fill);
+  panel.appendChild(progress);
 
+  const statusKey = state.exportState.status;
   const statusText =
-    state.exportState.status === 'completed'
-      ? pack.exportPanel.success
-      : state.exportState.status === 'running'
-        ? `${pack.exportPanel.progressLabel}: ${state.exportState.progress}%`
-        : '';
+    statusKey === 'completed'
+      ? pack.exportDialog.completed
+      : statusKey === 'running'
+        ? pack.exportDialog.running.replace('{progress}', state.exportState.progress)
+        : pack.exportDialog.idle;
+  panel.appendChild(createElement('p', { className: 'export-status', text: statusText }));
 
-  container.appendChild(createElement('label', { text: pack.exportPanel.destination }));
-  container.appendChild(destinationInput);
-  container.appendChild(metadataToggle);
-  container.appendChild(startButton);
-  container.appendChild(progress);
-  if (statusText) {
-    container.appendChild(createElement('p', { className: 'export-status', text: statusText }));
-  }
-  return container;
+  const actions = createElement('div', { className: 'modal-actions' });
+  const cancelButton = createElement('button', {
+    className: 'ghost-button',
+    text: state.exportState.status === 'completed' ? pack.exportDialog.close : pack.exportDialog.cancel
+  });
+  cancelButton.type = 'button';
+  cancelButton.disabled = state.exportState.status === 'running';
+  cancelButton.addEventListener('click', closeExportModal);
+
+  const startButton = createElement('button', {
+    className: 'primary-button',
+    text: pack.exportDialog.start
+  });
+  startButton.type = 'button';
+  startButton.disabled = state.exportState.status === 'running';
+  startButton.addEventListener('click', () => {
+    startExport(bookIds, state.exportModal?.collectionId);
+  });
+  actions.appendChild(cancelButton);
+  actions.appendChild(startButton);
+  panel.appendChild(actions);
+
+  overlay.appendChild(panel);
+  return overlay;
 }
 function ensureAiSession(collectionId) {
   if (!state.aiSessions[collectionId]) {
@@ -2853,6 +3250,8 @@ function renderApp() {
     appShell.appendChild(renderDashboardPage(pack));
   } else if (state.activePage === 'collection' && state.selectedCollectionId) {
     appShell.appendChild(renderCollectionPage(pack));
+  } else if (state.activePage === 'preview' && state.selectedCollectionId) {
+    appShell.appendChild(renderPreviewPage(pack));
   } else if (state.activePage === 'monitor') {
     appShell.appendChild(renderMonitorPage(pack));
   } else if (state.activePage === 'settings') {
@@ -2872,6 +3271,10 @@ function renderApp() {
     if (scanOverlay) {
       root.appendChild(scanOverlay);
     }
+  }
+  const exportModal = renderExportModal(pack);
+  if (exportModal) {
+    root.appendChild(exportModal);
   }
   const toast = renderToast();
   if (toast) {

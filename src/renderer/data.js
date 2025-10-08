@@ -35,7 +35,7 @@ export const translations = {
         title: 'Design Systems',
         description: 'Pattern libraries, accessibility guidelines, and design tokens references.',
         stats: '198 books · Metadata 95% complete',
-        actions: ['Preview Library', 'Export PDF Set', 'Edit']
+        actions: ['Preview Library', 'Edit']
       },
       {
         id: 'literature',
@@ -127,15 +127,29 @@ export const translations = {
     collectionDetail: {
       titlePrefix: 'Collection',
       subtitle: 'Search, filter, and manage every title inside this shelf.',
+      lastScanLabel: 'Last scan',
       searchPlaceholder: 'Search title, author, notes…',
+      filtersToggle: 'Show filters',
+      activeFilters: 'Active filters',
+      directories: 'Included directories',
+      directoryEmpty: 'No directories have been configured yet.',
+      editDirectories: 'Edit directories',
+      directorySaved: 'Directories updated',
+      rescanCompleted: 'Scan completed',
+      metadataUpdated: 'Metadata refreshed',
       filters: {
         classification: 'Classification',
         format: 'Format',
-        publication: 'Publication Year',
+        publication: 'Publication year',
         from: 'From',
         to: 'To',
-        apply: 'Apply Filters',
         reset: 'Reset'
+      },
+      directoryEditor: {
+        placeholder: 'One directory per line…',
+        rescan: 'Rescan after saving',
+        save: 'Save changes',
+        cancel: 'Cancel'
       },
       layoutToggle: {
         cards: 'Card view',
@@ -149,7 +163,6 @@ export const translations = {
       bulkActions: {
         title: 'Bulk actions',
         refreshMetadata: 'Refresh metadata',
-        export: 'Export to PDF',
         selectAll: 'Select all',
         clear: 'Clear selection'
       },
@@ -158,7 +171,7 @@ export const translations = {
         export: 'Export',
         chat: 'AI Chat'
       },
-      tableHeaders: ['Title', 'Author', 'Classification', 'Year', 'Format', 'Size', 'Date Added', 'Enrichment'],
+      tableHeaders: ['Title', 'Author', 'Classification', 'Year', 'Format', 'Size', 'Date Added', 'Enrichment', 'Actions'],
       noResults: 'No books match your current filters.',
       resumeReading: 'Resume last session',
       rescan: 'Rescan folders',
@@ -173,13 +186,19 @@ export const translations = {
       zoomOut: 'Zoom out',
       fitWidth: 'Fit width',
       fitPage: 'Fit page',
-      toggleFullscreen: 'Toggle fullscreen',
       previousPage: 'Previous page',
       nextPage: 'Next page',
       addBookmark: 'Add bookmark',
       removeBookmark: 'Remove bookmark',
       savedBookmark: 'Bookmark saved',
-      removedBookmark: 'Bookmark removed'
+      removedBookmark: 'Bookmark removed',
+      back: 'Back to collection',
+      export: 'Export selection',
+      metadataTitle: 'Book details',
+      formatLabel: 'Format',
+      sizeLabel: 'Size',
+      pagesLabel: 'Pages',
+      updatedLabel: 'Metadata updated'
     },
     ttsPanel: {
       title: 'Text-to-Speech',
@@ -194,14 +213,18 @@ export const translations = {
       female: 'Female',
       neutral: 'Neutral'
     },
-    exportPanel: {
-      title: 'Export to PDF',
+    exportDialog: {
+      title: 'Export selection',
+      subtitle: 'Choose a destination for the generated files.',
+      count: '{count} books ready to export',
       destination: 'Destination folder',
-      metadataPage: 'Include metadata cover page',
+      metadata: 'Include metadata cover page',
       start: 'Start export',
-      progressLabel: 'Conversion progress',
-      success: 'Export completed',
-      failure: 'Export failed. Please try again.'
+      cancel: 'Cancel',
+      close: 'Close',
+      idle: 'Ready to export',
+      running: 'Exporting… {progress}%',
+      completed: 'Export completed'
     },
     aiPanel: {
       title: 'AI Research Assistant',
@@ -265,7 +288,7 @@ export const translations = {
         title: '设计系统文库',
         description: '包含模式库、无障碍指南与设计令牌参考。',
         stats: '198 本 · 元数据完善率 95%',
-        actions: ['预览文库', '批量导出 PDF', '编辑']
+        actions: ['预览文库', '编辑']
       },
       {
         id: 'literature',
@@ -356,15 +379,29 @@ export const translations = {
     collectionDetail: {
       titlePrefix: '收藏集',
       subtitle: '在此检索、过滤并管理书架中的每一本书。',
+      lastScanLabel: '最近扫描',
       searchPlaceholder: '搜索标题、作者或笔记…',
+      filtersToggle: '显示筛选',
+      activeFilters: '已选条件',
+      directories: '覆盖目录',
+      directoryEmpty: '尚未配置目录。',
+      editDirectories: '编辑目录',
+      directorySaved: '目录已更新',
+      rescanCompleted: '扫描完成',
+      metadataUpdated: '元数据已刷新',
       filters: {
         classification: '分类',
         format: '格式',
         publication: '出版年份',
         from: '起始',
         to: '结束',
-        apply: '应用筛选',
         reset: '重置'
+      },
+      directoryEditor: {
+        placeholder: '每行一个目录…',
+        rescan: '保存后重新扫描',
+        save: '保存修改',
+        cancel: '取消'
       },
       layoutToggle: {
         cards: '卡片视图',
@@ -378,7 +415,6 @@ export const translations = {
       bulkActions: {
         title: '批量操作',
         refreshMetadata: '刷新元数据',
-        export: '批量导出 PDF',
         selectAll: '全选',
         clear: '清除'
       },
@@ -387,7 +423,7 @@ export const translations = {
         export: '导出',
         chat: 'AI 对话'
       },
-      tableHeaders: ['标题', '作者', '分类', '年份', '格式', '大小', '添加时间', '完善状态'],
+      tableHeaders: ['标题', '作者', '分类', '年份', '格式', '大小', '添加时间', '完善状态', '操作'],
       noResults: '没有符合当前筛选条件的图书。',
       resumeReading: '继续上次阅读',
       rescan: '重新扫描目录',
@@ -402,13 +438,19 @@ export const translations = {
       zoomOut: '缩小',
       fitWidth: '适应宽度',
       fitPage: '适应页面',
-      toggleFullscreen: '全屏切换',
       previousPage: '上一页',
       nextPage: '下一页',
       addBookmark: '添加书签',
       removeBookmark: '移除书签',
       savedBookmark: '书签已保存',
-      removedBookmark: '书签已移除'
+      removedBookmark: '书签已移除',
+      back: '返回收藏集',
+      export: '导出所选',
+      metadataTitle: '图书信息',
+      formatLabel: '格式',
+      sizeLabel: '大小',
+      pagesLabel: '页数',
+      updatedLabel: '元数据更新时间'
     },
     ttsPanel: {
       title: '文本转语音',
@@ -423,14 +465,18 @@ export const translations = {
       female: '女声',
       neutral: '中性'
     },
-    exportPanel: {
-      title: '导出为 PDF',
-      destination: '导出目录',
-      metadataPage: '附加元数据封面页',
+    exportDialog: {
+      title: '导出选中图书',
+      subtitle: '请选择导出文件的保存位置。',
+      count: '共选中 {count} 本图书',
+      destination: '目标文件夹',
+      metadata: '附带元数据封面页',
       start: '开始导出',
-      progressLabel: '转换进度',
-      success: '导出完成',
-      failure: '导出失败，请重试。'
+      cancel: '取消',
+      close: '关闭',
+      idle: '等待导出',
+      running: '正在导出… {progress}%',
+      completed: '导出完成'
     },
     aiPanel: {
       title: 'AI 研究助手',
