@@ -5,6 +5,30 @@ const { app } = require('electron');
 
 const seeds = require('./seed-data');
 
+function getSeedBootstrap() {
+  return {
+    translations: JSON.parse(JSON.stringify(seeds.translations || {})),
+    supportedCoverTypes: Array.isArray(seeds.supportedCoverTypes)
+      ? [...seeds.supportedCoverTypes]
+      : [],
+    classificationCatalog: JSON.parse(JSON.stringify(seeds.classificationCatalog || {})),
+    formatCatalog: JSON.parse(JSON.stringify(seeds.formatCatalog || {})),
+    statEmojiMap: JSON.parse(JSON.stringify(seeds.statEmojiMap || {})),
+    collectionEmojiMap: JSON.parse(JSON.stringify(seeds.collectionEmojiMap || {})),
+    classificationEmojiMap: JSON.parse(JSON.stringify(seeds.classificationEmojiMap || {})),
+    enrichmentLabels: JSON.parse(JSON.stringify(seeds.enrichmentLabels || {})),
+    classificationOptions: Array.isArray(seeds.classificationOptions)
+      ? [...seeds.classificationOptions]
+      : [],
+    formatOptions: Array.isArray(seeds.formatOptions) ? [...seeds.formatOptions] : [],
+    directoryOptions: Array.isArray(seeds.directoryOptions) ? [...seeds.directoryOptions] : [],
+    initialCollectionMetadata: JSON.parse(JSON.stringify(seeds.initialCollectionMetadata || {})),
+    initialCollectionBooks: JSON.parse(JSON.stringify(seeds.initialCollectionBooks || {})),
+    initialSettings: JSON.parse(JSON.stringify(seeds.initialSettings || {})),
+    defaultWizardData: JSON.parse(JSON.stringify(seeds.defaultWizardData || {}))
+  };
+}
+
 let dbInstance = null;
 
 function getDatabasePath() {
@@ -110,31 +134,42 @@ function saveState(nextState) {
 }
 
 function getBootstrapData() {
-  const database = getDatabase();
-  const translationRows = database.prepare('SELECT locale, payload FROM translations').all();
-  const translations = translationRows.reduce((acc, row) => {
-    try {
-      acc[row.locale] = JSON.parse(row.payload);
-    } catch (error) {
-      console.error('Failed to parse translation payload', row.locale, error);
-    }
-    return acc;
-  }, {});
+  try {
+    const database = getDatabase();
+    const translationRows = database.prepare('SELECT locale, payload FROM translations').all();
+    const translations = translationRows.reduce((acc, row) => {
+      try {
+        acc[row.locale] = JSON.parse(row.payload);
+      } catch (error) {
+        console.error('Failed to parse translation payload', row.locale, error);
+      }
+      return acc;
+    }, {});
 
-  const metaRows = database.prepare('SELECT key, value FROM meta').all();
-  const meta = metaRows.reduce((acc, row) => {
-    try {
-      acc[row.key] = JSON.parse(row.value);
-    } catch (error) {
-      console.error('Failed to parse meta payload', row.key, error);
-    }
-    return acc;
-  }, {});
+    const metaRows = database.prepare('SELECT key, value FROM meta').all();
+    const meta = metaRows.reduce((acc, row) => {
+      try {
+        acc[row.key] = JSON.parse(row.value);
+      } catch (error) {
+        console.error('Failed to parse meta payload', row.key, error);
+      }
+      return acc;
+    }, {});
 
-  return {
-    translations,
-    ...meta
-  };
+    const payload = {
+      translations,
+      ...meta
+    };
+
+    if (!Object.keys(payload.translations || {}).length) {
+      return getSeedBootstrap();
+    }
+
+    return payload;
+  } catch (error) {
+    console.error('Failed to load bootstrap data from database, falling back to seed data', error);
+    return getSeedBootstrap();
+  }
 }
 
 function resetDatabase() {
