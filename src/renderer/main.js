@@ -5,16 +5,16 @@ const root = document.getElementById('root');
 const supportedCoverTypes = ['image/png', 'image/jpeg', 'image/webp'];
 
 const classificationCatalog = {
-  X4: { en: 'X4 Environmental Science Fundamentals', zh: 'X4 环境科学基础理论' },
-  X5: { en: 'X5 Environmental Protection Planning', zh: 'X5 环境保护规划与评价' },
-  F2: { en: 'F2 National Economy Management', zh: 'F2 国民经济管理' },
-  F49: { en: 'F49 Energy Economics', zh: 'F49 能源经济' },
-  TU201: { en: 'TU201 Urban Planning Theory', zh: 'TU201 城市规划理论' },
-  TB472: { en: 'TB472 Industrial Design', zh: 'TB472 工业设计' },
-  'TB472.1': { en: 'TB472.1 Design Systems', zh: 'TB472.1 设计系统' },
-  I2067: { en: 'I206.7 Modern Chinese Fiction', zh: 'I206.7 现代小说' },
-  I227: { en: 'I227 Poetry', zh: 'I227 诗歌' },
-  I267: { en: 'I267 Essays & Reportage', zh: 'I267 散文·随笔' }
+  X4: { en: 'Environmental Science Fundamentals', zh: '环境科学基础理论' },
+  X5: { en: 'Environmental Protection Management', zh: '环境保护管理' },
+  F2: { en: 'National Economic Management', zh: '国民经济管理' },
+  F49: { en: 'Energy Economics', zh: '能源经济' },
+  TU201: { en: 'Urban Planning Theory', zh: '城市规划理论' },
+  TB472: { en: 'Industrial Design', zh: '工业设计' },
+  'TB472.1': { en: 'Design Systems', zh: '设计系统' },
+  I2067: { en: 'Modern Chinese Fiction', zh: '现代小说' },
+  I227: { en: 'Poetry', zh: '诗歌' },
+  I267: { en: 'Essays & Reportage', zh: '散文·报告文学' }
 };
 
 const formatCatalog = {
@@ -1631,22 +1631,36 @@ function renderFilters(collectionId, preferences, pack) {
   );
   const classificationGroup = createElement('div', { className: 'chip-group' });
   const classificationClear = createElement('button', {
-    className: `filter-chip${preferences.classification?.size ? '' : ' active'}`,
-    text: state.locale === 'zh' ? '不限' : 'All'
+    className: `filter-chip clear-chip${preferences.classification?.size ? '' : ' active'}`,
+    children: [createElement('span', { className: 'chip-label', text: state.locale === 'zh' ? '不限' : 'All' })]
   });
   classificationClear.type = 'button';
+  classificationClear.setAttribute('aria-pressed', preferences.classification?.size ? 'false' : 'true');
   classificationClear.addEventListener('click', () => {
-    preferences.classification.clear();
+    if (preferences.classification instanceof Set) {
+      preferences.classification.clear();
+    } else {
+      preferences.classification = new Set();
+    }
     preferences.page = 1;
     renderApp();
   });
   classificationGroup.appendChild(classificationClear);
   classificationOptions.forEach((option) => {
+    const isActive = preferences.classification?.has(option);
     const chip = createElement('button', {
-      className: `filter-chip${preferences.classification?.has(option) ? ' active' : ''}`,
-      text: `${getClassificationLabel(option)}`
+      className: `filter-chip${isActive ? ' active' : ''}`,
+      children: [
+        createElement('span', {
+          className: 'chip-check',
+          attributes: { 'aria-hidden': 'true' },
+          children: [createElement('span', { className: 'chip-check-icon', text: '✓' })]
+        }),
+        createElement('span', { className: 'chip-label', text: getClassificationLabel(option) })
+      ]
     });
     chip.type = 'button';
+    chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     chip.addEventListener('click', () => {
       if (preferences.classification.has(option)) {
         preferences.classification.delete(option);
