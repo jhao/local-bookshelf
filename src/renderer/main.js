@@ -1,3 +1,4 @@
+;(async () => {
 let bootstrapData = {};
 if (window.api?.bootstrap) {
   try {
@@ -3055,3 +3056,4 @@ function renderApp() {
 document.addEventListener('DOMContentLoaded', () => {
   initializeApp();
 });
+})();
