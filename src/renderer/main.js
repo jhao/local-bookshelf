@@ -240,6 +240,8 @@ const state = {
   exportModal: null
 };
 
+let jobCounter = 0;
+
 const persistence = {
   hydrating: true,
   hydrated: false,
