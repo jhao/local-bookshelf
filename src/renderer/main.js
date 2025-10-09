@@ -7,7 +7,18 @@ if (window.api?.bootstrap) {
     console.error('Failed to load bootstrap data', error);
   }
 } else {
-  console.warn('Bootstrap API is not available.');
+  console.warn('Bootstrap API is not available. Falling back to bundled seed data.');
+  try {
+    const fallbackUrl = new URL('../shared/seed-data.json', import.meta.url);
+    const response = await fetch(fallbackUrl);
+    if (response.ok) {
+      bootstrapData = (await response.json()) || {};
+    } else {
+      console.error('Failed to load fallback seed data', response.status, response.statusText);
+    }
+  } catch (error) {
+    console.error('Failed to load fallback seed data', error);
+  }
 }
 
 const translations = bootstrapData.translations || {};
