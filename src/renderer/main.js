@@ -1,24 +1,118 @@
+import fallbackSeedData from '../shared/seed-data.json' assert { type: 'json' };
+
 ;(async () => {
-let bootstrapData = {};
+function clone(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
+function mergeLocaleTranslations(baseLocale = {}, overrideLocale = {}) {
+  const baseClone = clone(baseLocale) || {};
+  const overrideClone = clone(overrideLocale) || {};
+  const merged = { ...baseClone, ...overrideClone };
+
+  const pickArray = (overrideValue, baseValue) => {
+    if (Array.isArray(overrideValue) && overrideValue.length) {
+      return clone(overrideValue);
+    }
+    if (Array.isArray(baseValue)) {
+      return clone(baseValue);
+    }
+    return [];
+  };
+
+  merged.stats = pickArray(overrideClone.stats, baseClone.stats);
+  merged.collections = pickArray(overrideClone.collections, baseClone.collections);
+  merged.roadmapItems = pickArray(overrideClone.roadmapItems, baseClone.roadmapItems);
+
+  if (baseClone.wizard || overrideClone.wizard) {
+    const baseWizard = baseClone.wizard || {};
+    const overrideWizard = overrideClone.wizard || {};
+    merged.wizard = {
+      ...clone(baseWizard),
+      ...clone(overrideWizard),
+      steps: pickArray(overrideWizard.steps, baseWizard.steps)
+    };
+  }
+
+  return merged;
+}
+
+function mergeTranslations(baseTranslations = {}, overrideTranslations = {}) {
+  const locales = new Set([
+    ...Object.keys(baseTranslations || {}),
+    ...Object.keys(overrideTranslations || {})
+  ]);
+  const result = {};
+  locales.forEach((locale) => {
+    result[locale] = mergeLocaleTranslations(
+      baseTranslations?.[locale],
+      overrideTranslations?.[locale]
+    );
+  });
+  return result;
+}
+
+function mergeBootstrapData(base = {}, override = {}) {
+  const baseClone = clone(base) || {};
+  const overrideClone = clone(override) || {};
+  const result = { ...baseClone, ...overrideClone };
+
+  result.translations = mergeTranslations(baseClone.translations, overrideClone.translations);
+
+  const objectKeys = [
+    'classificationCatalog',
+    'formatCatalog',
+    'statEmojiMap',
+    'collectionEmojiMap',
+    'classificationEmojiMap',
+    'enrichmentLabels',
+    'initialCollectionMetadata',
+    'initialCollectionBooks'
+  ];
+  objectKeys.forEach((key) => {
+    result[key] = {
+      ...(baseClone[key] ? clone(baseClone[key]) : {}),
+      ...(overrideClone[key] ? clone(overrideClone[key]) : {})
+    };
+  });
+
+  const arrayKeys = ['supportedCoverTypes', 'classificationOptions', 'formatOptions', 'directoryOptions'];
+  arrayKeys.forEach((key) => {
+    const overrideArray =
+      Array.isArray(overrideClone[key]) && overrideClone[key].length ? clone(overrideClone[key]) : null;
+    const baseArray = Array.isArray(baseClone[key]) ? clone(baseClone[key]) : [];
+    result[key] = overrideArray || baseArray;
+  });
+
+  result.initialSettings = {
+    ...(baseClone.initialSettings ? clone(baseClone.initialSettings) : {}),
+    ...(overrideClone.initialSettings ? clone(overrideClone.initialSettings) : {})
+  };
+
+  result.defaultWizardData = {
+    ...(baseClone.defaultWizardData ? clone(baseClone.defaultWizardData) : {}),
+    ...(overrideClone.defaultWizardData ? clone(overrideClone.defaultWizardData) : {})
+  };
+
+  return result;
+}
+
+const fallbackBootstrapData = mergeBootstrapData(fallbackSeedData ?? {}, {});
+let bootstrapData = mergeBootstrapData(fallbackBootstrapData, {});
 if (window.api?.bootstrap) {
   try {
-    bootstrapData = (await window.api.bootstrap()) || {};
+    const remoteBootstrap = (await window.api.bootstrap()) || {};
+    bootstrapData = mergeBootstrapData(fallbackBootstrapData, remoteBootstrap);
   } catch (error) {
-    console.error('Failed to load bootstrap data', error);
+    console.error('Failed to load bootstrap data, using fallback seed data', error);
+    bootstrapData = mergeBootstrapData(fallbackBootstrapData, {});
   }
 } else {
-  console.warn('Bootstrap API is not available. Falling back to bundled seed data.');
-  try {
-    const fallbackUrl = new URL('../shared/seed-data.json', import.meta.url);
-    const response = await fetch(fallbackUrl);
-    if (response.ok) {
-      bootstrapData = (await response.json()) || {};
-    } else {
-      console.error('Failed to load fallback seed data', response.status, response.statusText);
-    }
-  } catch (error) {
-    console.error('Failed to load fallback seed data', error);
-  }
+  console.warn('Bootstrap API is not available. Using bundled seed data.');
+  bootstrapData = mergeBootstrapData(fallbackBootstrapData, {});
 }
 
 const translations = bootstrapData.translations || {};
@@ -558,7 +652,9 @@ function getCollectionDisplay(id) {
     };
   }
   const overrides = state.collectionOverrides[id];
-  const basePack = translations[state.locale].collections.find((item) => item.id === id);
+  const basePack = Array.isArray(pack.collections)
+    ? pack.collections.find((item) => item.id === id)
+    : null;
   const user = state.userCollections.find((item) => item.id === id);
   if (user) {
     return {
@@ -1274,7 +1370,8 @@ function renderStats(pack) {
     className: 'dashboard-grid',
     attributes: { 'aria-label': 'dashboard' }
   });
-  pack.stats.forEach((stat) => {
+  const stats = Array.isArray(pack.stats) ? pack.stats : [];
+  stats.forEach((stat) => {
     const card = createElement('article', { className: 'dashboard-card' });
     const emoji = statEmojiMap[stat.id] || '📊';
     card.appendChild(createElement('h3', { text: `${emoji} ${stat.label}` }));
@@ -1376,7 +1473,8 @@ function renderRoadmap(pack) {
     })
   );
   const grid = createElement('div', { className: 'dashboard-grid multi-column' });
-  pack.roadmapItems.forEach((item) => {
+  const items = Array.isArray(pack.roadmapItems) ? pack.roadmapItems : [];
+  items.forEach((item) => {
     const card = createElement('article', { className: 'dashboard-card' });
     card.appendChild(createElement('p', { text: item }));
     grid.appendChild(card);
