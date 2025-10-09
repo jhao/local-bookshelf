@@ -3373,7 +3373,11 @@ function renderApp() {
   schedulePersist();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    initializeApp();
+  });
+} else {
   initializeApp();
-});
+}
 })();
