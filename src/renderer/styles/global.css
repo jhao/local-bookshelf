@@ -1325,6 +1325,45 @@ body {
   color: #0f172a;
 }
 
+.wizard-dropzone,
+.wizard-cover-dropzone {
+  margin: 16px 0;
+  padding: 24px 20px;
+  border-radius: 18px;
+  border: 2px dashed #cbd5f5;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.wizard-dropzone.active,
+.wizard-cover-dropzone.active {
+  border-color: #2563eb;
+  background: #e0e7ff;
+  box-shadow: 0 12px 32px rgba(37, 99, 235, 0.18);
+}
+
+.wizard-cover-dropzone.has-file {
+  border-style: solid;
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.wizard-drop-title {
+  font-weight: 700;
+  color: #1e3a8a;
+}
+
+.wizard-drop-subtext {
+  color: #475569;
+  font-size: 0.95rem;
+}
+
 .wizard-input,
 .wizard-textarea,
 .wizard-file {

@@ -24,6 +24,23 @@ if (window.api?.bootstrap) {
 const translations = bootstrapData.translations || {};
 
 const supportedCoverTypes = bootstrapData.supportedCoverTypes || ['image/png', 'image/jpeg', 'image/webp'];
+const defaultCoverExtensionMap = {
+  'image/png': ['png'],
+  'image/jpeg': ['jpg', 'jpeg'],
+  'image/webp': ['webp']
+};
+const supportedCoverExtensions = Array.from(
+  new Set(
+    supportedCoverTypes.flatMap((type) => {
+      const normalized = defaultCoverExtensionMap[type];
+      if (normalized && Array.isArray(normalized)) {
+        return normalized;
+      }
+      const ext = type.split('/').pop();
+      return ext ? [ext.toLowerCase()] : [];
+    })
+  )
+);
 
 const classificationCatalog = bootstrapData.classificationCatalog || {};
 const formatCatalog = bootstrapData.formatCatalog || {};
@@ -96,6 +113,9 @@ const defaultLocale = availableLocales.includes('en') ? 'en' : availableLocales[
 
 const root = document.getElementById('root');
 
+const DROP_ZONE_SELECTOR = '.wizard-dropzone, .wizard-cover-dropzone';
+let dragGuardsRegistered = false;
+
 const state = {
   locale: defaultLocale,
   showWizard: false,
@@ -133,6 +153,91 @@ const persistence = {
   timeout: null,
   lastSerialized: null
 };
+
+function getFileExtension(name) {
+  if (!name || typeof name !== 'string') {
+    return '';
+  }
+  const index = name.lastIndexOf('.');
+  if (index === -1) {
+    return '';
+  }
+  return name.slice(index + 1).toLowerCase();
+}
+
+function isSupportedCoverFile(file) {
+  if (!file) {
+    return false;
+  }
+  if (file.type && supportedCoverTypes.includes(file.type)) {
+    return true;
+  }
+  const extension = getFileExtension(file.name || file.path || '');
+  if (!extension) {
+    return false;
+  }
+  return supportedCoverExtensions.includes(extension);
+}
+
+function extractDroppedDirectories(event) {
+  const directories = [];
+  const transfer = event?.dataTransfer;
+  if (!transfer) {
+    return directories;
+  }
+  const items = Array.from(transfer.items || []);
+  items.forEach((item) => {
+    if (!item || item.kind !== 'file') {
+      return;
+    }
+    if (typeof item.webkitGetAsEntry === 'function') {
+      const entry = item.webkitGetAsEntry();
+      if (entry?.isDirectory) {
+        const file = item.getAsFile();
+        if (file?.path) {
+          directories.push(file.path);
+        }
+      }
+      return;
+    }
+    const file = item.getAsFile();
+    if (file?.path && (!file.type || file.type === '')) {
+      directories.push(file.path);
+    }
+  });
+  if (directories.length) {
+    return Array.from(new Set(directories)).filter(Boolean);
+  }
+  const files = Array.from(transfer.files || []);
+  files.forEach((file) => {
+    if (file?.path && (!file.type || file.type === '')) {
+      directories.push(file.path);
+    }
+  });
+  return Array.from(new Set(directories)).filter(Boolean);
+}
+
+function registerGlobalDragGuards() {
+  if (dragGuardsRegistered || typeof document === 'undefined') {
+    return;
+  }
+  dragGuardsRegistered = true;
+  const guard = (event) => {
+    if (!event) {
+      return;
+    }
+    const target = event.target;
+    const allowDropTarget = target instanceof Element && target.closest(DROP_ZONE_SELECTOR);
+    if (!allowDropTarget) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+  document.addEventListener('dragover', guard);
+  document.addEventListener('drop', guard);
+}
+
+registerGlobalDragGuards();
 
 function serializeState() {
   const preferences = {};
@@ -2804,6 +2909,54 @@ function renderWizardOverlay(pack) {
 
     panel.appendChild(createElement('h5', { className: 'path-section-title', text: pack.wizard.selectedTitle }));
 
+    const dropZoneTitle =
+      pack.wizard.dropZoneTitle || (state.locale === 'zh' ? '拖放文件夹到此处' : 'Drag & drop folders');
+    const dropZoneSubtitle =
+      pack.wizard.dropZoneSubtitle ||
+      (state.locale === 'zh'
+        ? '可直接从 Finder 或资源管理器拖入目录，即刻添加。'
+        : 'Drop directories from Finder or Explorer to add them instantly.');
+    const dropZoneInvalidMessage =
+      pack.wizard.dropNoValidEntries ||
+      (state.locale === 'zh' ? '仅支持拖放文件夹。' : 'Only folders can be added from drag-and-drop.');
+    const dropZone = createElement('div', { className: 'wizard-dropzone' });
+    dropZone.appendChild(createElement('span', { className: 'wizard-drop-title', text: dropZoneTitle }));
+    dropZone.appendChild(createElement('span', { className: 'wizard-drop-subtext', text: dropZoneSubtitle }));
+    const setDropZoneActive = (active) => {
+      dropZone.classList.toggle('active', Boolean(active));
+    };
+    ['dragenter', 'dragover'].forEach((eventName) => {
+      dropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setDropZoneActive(true);
+      });
+    });
+    dropZone.addEventListener('dragleave', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const related = event.relatedTarget;
+      if (!(related instanceof Element) || !dropZone.contains(related)) {
+        setDropZoneActive(false);
+      }
+    });
+    dropZone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setDropZoneActive(false);
+      const directories = extractDroppedDirectories(event);
+      if (!directories.length) {
+        if (event.dataTransfer?.files?.length) {
+          showToast(dropZoneInvalidMessage);
+        }
+        return;
+      }
+      directories.forEach((pathValue) => {
+        mutatePaths(pathValue);
+      });
+    });
+    panel.appendChild(dropZone);
+
     const pathList = createElement('div', { className: 'path-list' });
     if (!state.wizardData.paths.length) {
       pathList.appendChild(createElement('p', { className: 'wizard-helper', text: pack.wizard.emptyPathHelper }));
@@ -2875,21 +3028,79 @@ function renderWizardOverlay(pack) {
       className: 'wizard-file',
       attributes: { type: 'file', accept: 'image/png,image/jpeg,image/webp' }
     });
+    const invalidCoverMessage =
+      pack.wizard.validations?.invalidCover ||
+      (state.locale === 'zh' ? '仅支持 PNG、JPG、WebP 格式。' : 'Only PNG, JPG, and WebP formats are supported.');
+    const assignCoverFile = (file) => {
+      if (!file) {
+        return false;
+      }
+      if (!isSupportedCoverFile(file)) {
+        showToast(invalidCoverMessage);
+        return false;
+      }
+      state.wizardData.coverFile = file;
+      state.wizardData.coverName = file.name;
+      renderApp();
+      return true;
+    };
     coverInput.addEventListener('change', (event) => {
       const file = event.target.files?.[0];
-      if (file) {
-        state.wizardData.coverFile = file;
-        state.wizardData.coverName = file.name;
+      if (!assignCoverFile(file)) {
+        event.target.value = '';
       }
     });
     coverField.appendChild(createElement('label', { text: pack.wizard.coverLabel }));
     coverField.appendChild(coverInput);
-    panel.appendChild(coverField);
+    const coverDropTitle =
+      pack.wizard.coverDropTitle || (state.locale === 'zh' ? '拖放封面图片' : 'Drag & drop a cover image');
+    const coverDropSubtitle =
+      pack.wizard.coverDropSubtitle ||
+      (state.locale === 'zh' ? '支持 PNG、JPG 或 WebP 格式。' : 'PNG, JPG, or WebP files work best.');
+    const coverDropZone = createElement('div', {
+      className: `wizard-cover-dropzone${state.wizardData.coverName ? ' has-file' : ''}`
+    });
+    coverDropZone.appendChild(createElement('span', { className: 'wizard-drop-title', text: coverDropTitle }));
+    coverDropZone.appendChild(createElement('span', { className: 'wizard-drop-subtext', text: coverDropSubtitle }));
     if (state.wizardData.coverName) {
-      panel.appendChild(createElement('span', { className: 'file-name-tag', text: state.wizardData.coverName }));
-    } else {
-      panel.appendChild(createElement('p', { className: 'wizard-helper', text: pack.wizard.dropHint }));
+      coverDropZone.appendChild(createElement('span', { className: 'file-name-tag', text: state.wizardData.coverName }));
     }
+    const setCoverDropActive = (active) => {
+      coverDropZone.classList.toggle('active', Boolean(active));
+    };
+    ['dragenter', 'dragover'].forEach((eventName) => {
+      coverDropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setCoverDropActive(true);
+      });
+    });
+    coverDropZone.addEventListener('dragleave', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const related = event.relatedTarget;
+      if (!(related instanceof Element) || !coverDropZone.contains(related)) {
+        setCoverDropActive(false);
+      }
+    });
+    coverDropZone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setCoverDropActive(false);
+      const files = Array.from(event.dataTransfer?.files || []);
+      if (!files.length) {
+        return;
+      }
+      const supported = files.find((file) => isSupportedCoverFile(file));
+      if (!supported) {
+        showToast(invalidCoverMessage);
+        return;
+      }
+      assignCoverFile(supported);
+    });
+    coverField.appendChild(coverDropZone);
+    panel.appendChild(coverField);
+    panel.appendChild(createElement('p', { className: 'wizard-helper', text: pack.wizard.dropHint }));
   }
 
   const actions = createElement('div', { className: 'modal-actions' });
