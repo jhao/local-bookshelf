@@ -118,6 +118,12 @@ if (window.api?.bootstrap) {
 const translations = bootstrapData.translations || {};
 
 const supportedCoverTypes = bootstrapData.supportedCoverTypes || ['image/png', 'image/jpeg', 'image/webp'];
+const UNKNOWN_LABELS = {
+  author: { en: 'Unknown author', zh: '未知作者' },
+  classification: { en: 'Unknown classification', zh: '未知分类' },
+  year: { en: 'Unknown year', zh: '未知年份' },
+  cover: { en: 'No cover available', zh: '暂无封面' }
+};
 const defaultCoverExtensionMap = {
   'image/png': ['png'],
   'image/jpeg': ['jpg', 'jpeg'],
@@ -216,13 +222,6 @@ const AI_PROVIDERS = [
   { key: 'qwen', label: { en: 'Qwen', zh: '通义千问' } },
   { key: 'ollama', label: { en: 'Ollama (local)', zh: 'Ollama（本地）' } }
 ];
-
-const UNKNOWN_LABELS = {
-  author: { en: 'Unknown author', zh: '未知作者' },
-  classification: { en: 'Unknown classification', zh: '未知分类' },
-  year: { en: 'Unknown year', zh: '未知年份' },
-  cover: { en: 'No cover available', zh: '暂无封面' }
-};
 
 const METADATA_SAMPLES = [
   {
