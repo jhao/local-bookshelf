@@ -24,5 +24,14 @@ contextBridge.exposeInMainWorld('api', {
   },
   enumerateFiles(directoryPath) {
     return ipcRenderer.invoke('fs:enumerate-files', { path: directoryPath });
+  },
+  loadPreviewAsset(options) {
+    return ipcRenderer.invoke('preview:load', options);
+  },
+  ttsListVoices() {
+    return ipcRenderer.invoke('tts:list-voices');
+  },
+  ttsSynthesize(options) {
+    return ipcRenderer.invoke('tts:synthesize', options);
   }
 });

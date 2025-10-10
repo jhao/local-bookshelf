@@ -3,9 +3,13 @@ const path = require('path');
 const fs = require('fs');
 const util = require('util');
 const { exec } = require('child_process');
+const JSZip = require('jszip');
+const { XMLParser } = require('fast-xml-parser');
+const mammoth = require('mammoth');
 
 const fsPromises = fs.promises;
 const execAsync = util.promisify(exec);
+const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' });
 
 const {
   initializeDatabase,
@@ -16,6 +20,7 @@ const {
   backupDatabase
 } = require('./database');
 
+const tts = require('./tts');
 const isDev = process.env.NODE_ENV !== 'production';
 
 function createWindow() {
@@ -335,5 +340,192 @@ ipcMain.handle('fs:enumerate-files', async (_event, options = {}) => {
   } catch (error) {
     console.error('Failed to enumerate directory', error);
     return { path: directoryPath, exists: false, files: [], totalFiles: 0, error: error.message };
+  }
+});
+
+function normalizeExtension(format, filePath) {
+  if (typeof format === 'string' && format.trim()) {
+    return format.trim().toLowerCase();
+  }
+  if (typeof filePath === 'string') {
+    const ext = path.extname(filePath).replace(/^\./, '');
+    if (ext) {
+      return ext.toLowerCase();
+    }
+  }
+  return '';
+}
+
+function sanitizePlainText(content) {
+  if (!content) {
+    return '';
+  }
+  return content
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\t ]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function extractReadableText(buffer) {
+  if (!Buffer.isBuffer(buffer)) {
+    return '';
+  }
+  const utf8 = buffer.toString('utf8');
+  let cleaned = sanitizePlainText(utf8);
+  if (cleaned.length < 64) {
+    const latin = sanitizePlainText(buffer.toString('latin1'));
+    if (latin.length > cleaned.length) {
+      cleaned = latin;
+    }
+  }
+  if (cleaned.length > 40000) {
+    cleaned = `${cleaned.slice(0, 40000)}…`;
+  }
+  return cleaned;
+}
+
+function sanitizeHtmlSnippet(html) {
+  if (!html) {
+    return '';
+  }
+  return html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+}
+
+async function extractEpubPreview(buffer) {
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    const containerFile = zip.file('META-INF/container.xml');
+    let rootPath = null;
+    if (containerFile) {
+      const containerXml = await containerFile.async('text');
+      const container = xmlParser.parse(containerXml);
+      const rootfile = container?.container?.rootfiles?.rootfile;
+      const entry = Array.isArray(rootfile) ? rootfile[0] : rootfile;
+      rootPath =
+        entry?.['full-path'] || entry?.['fullPath'] || entry?.fullpath || entry?.['@_full-path'] || entry?.['Full-Path'];
+    }
+
+    let manifestItems = [];
+    let spineItems = [];
+    if (rootPath) {
+      const opfFile = zip.file(rootPath);
+      if (opfFile) {
+        const opfXml = await opfFile.async('text');
+        const opf = xmlParser.parse(opfXml);
+        const manifest = opf?.package?.manifest?.item;
+        const spine = opf?.package?.spine?.itemref;
+        if (manifest) {
+          manifestItems = Array.isArray(manifest) ? manifest : [manifest];
+        }
+        if (spine) {
+          spineItems = Array.isArray(spine) ? spine : [spine];
+        }
+        const firstSpine = spineItems[0];
+        const idref = firstSpine?.idref || firstSpine?.['@_idref'] || firstSpine?.idRef;
+        if (idref) {
+          const target = manifestItems.find((item) => item?.id === idref || item?.['@_id'] === idref);
+          const href = target?.href || target?.['@_href'];
+          if (href) {
+            const base = rootPath.includes('/') ? rootPath.slice(0, rootPath.lastIndexOf('/') + 1) : '';
+            const normalized = path.posix.join(base, href).replace(/^\//, '');
+            const htmlFile = zip.file(normalized) || zip.file(href);
+            if (htmlFile) {
+              const html = await htmlFile.async('text');
+              return sanitizeHtmlSnippet(html);
+            }
+          }
+        }
+      }
+    }
+
+    const fallback = Object.values(zip.files).find((entry) => /\.(x?html?|htm)$/i.test(entry.name));
+    if (fallback) {
+      const html = await fallback.async('text');
+      return sanitizeHtmlSnippet(html);
+    }
+  } catch (error) {
+    console.warn('Failed to extract EPUB preview', error);
+  }
+  return null;
+}
+
+ipcMain.handle('tts:list-voices', async () => {
+  try {
+    const voices = await tts.listVoices();
+    return { success: true, voices };
+  } catch (error) {
+    console.error('Failed to enumerate TTS voices', error);
+    return { success: false, error: error?.message || 'unavailable' };
+  }
+});
+
+ipcMain.handle('tts:synthesize', async (_event, options = {}) => {
+  try {
+    const result = await tts.synthesize(options.text || '', { voice: options.voice });
+    return { success: true, ...result };
+  } catch (error) {
+    if (error?.code === 'BUSY') {
+      return { success: false, error: 'busy' };
+    }
+    if (error?.message === 'empty') {
+      return { success: false, error: 'empty' };
+    }
+    console.error('Failed to synthesize speech', error);
+    return { success: false, error: error?.message || 'unavailable' };
+  }
+});
+
+ipcMain.handle('preview:load', async (_event, options = {}) => {
+  const filePath = options.path;
+  const format = normalizeExtension(options.format, filePath);
+  if (!filePath || typeof filePath !== 'string') {
+    return { success: false, error: 'Missing file path' };
+  }
+  try {
+    await fsPromises.access(filePath, fs.constants.R_OK);
+  } catch (error) {
+    return { success: false, error: 'File not accessible' };
+  }
+
+  try {
+    const buffer = await fsPromises.readFile(filePath);
+    if (format === 'pdf') {
+      return {
+        success: true,
+        kind: 'dataUrl',
+        mime: 'application/pdf',
+        data: `data:application/pdf;base64,${buffer.toString('base64')}`
+      };
+    }
+    if (format === 'txt') {
+      return { success: true, kind: 'text', content: sanitizePlainText(buffer.toString('utf8')) };
+    }
+    if (format === 'docx') {
+      const result = await mammoth.convertToHtml({ buffer });
+      return { success: true, kind: 'html', content: sanitizeHtmlSnippet(result.value || '') };
+    }
+    if (format === 'epub') {
+      const html = await extractEpubPreview(buffer);
+      if (html) {
+        return { success: true, kind: 'html', content: html };
+      }
+    }
+    if (format === 'mobi' || format === 'azw3') {
+      const text = extractReadableText(buffer);
+      if (text) {
+        return { success: true, kind: 'text', content: text };
+      }
+    }
+    const fallbackText = extractReadableText(buffer);
+    if (fallbackText) {
+      return { success: true, kind: 'text', content: fallbackText };
+    }
+    return { success: false, error: 'Unsupported preview format' };
+  } catch (error) {
+    console.error('Failed to load preview asset', error);
+    return { success: false, error: error.message };
   }
 });

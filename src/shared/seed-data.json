@@ -321,7 +321,15 @@
         "highlight": "Highlight narration",
         "male": "Male",
         "female": "Female",
-        "neutral": "Neutral"
+        "neutral": "Neutral",
+        "unsupported": "Local narration is not available on this device.",
+        "loading": "Preparing local voice engine…",
+        "noText": "No readable text is available for narration.",
+        "error": "Unable to synthesize narration.",
+        "initializing": "Loading local voice model…",
+        "generating": "Synthesizing speech…",
+        "generatingMessage": "Voice synthesis in progress…",
+        "busy": "Voice engine is busy. Please try again shortly."
       },
       "exportDialog": {
         "title": "Export selection",
@@ -708,7 +716,15 @@
         "highlight": "高亮朗读文本",
         "male": "男声",
         "female": "女声",
-        "neutral": "中性"
+        "neutral": "中性",
+        "unsupported": "当前设备暂不支持本地朗读。",
+        "loading": "正在准备本地语音模型…",
+        "noText": "没有可朗读的文本内容。",
+        "error": "无法生成语音。",
+        "initializing": "正在加载本地语音模型…",
+        "generating": "正在合成语音…",
+        "generatingMessage": "语音合成进行中…",
+        "busy": "语音引擎正忙，请稍后重试。"
       },
       "exportDialog": {
         "title": "导出选中图书",

@@ -118,6 +118,7 @@ if (window.api?.bootstrap) {
 const translations = bootstrapData.translations || {};
 
 const supportedCoverTypes = bootstrapData.supportedCoverTypes || ['image/png', 'image/jpeg', 'image/webp'];
+const MAX_COVER_SIZE_BYTES = 5 * 1024 * 1024;
 const UNKNOWN_LABELS = {
   author: { en: 'Unknown author', zh: '未知作者' },
   classification: { en: 'Unknown classification', zh: '未知分类' },
@@ -313,6 +314,18 @@ const root = document.getElementById('root');
 const DROP_ZONE_SELECTOR = '.wizard-dropzone, .wizard-cover-dropzone';
 let dragGuardsRegistered = false;
 
+const ttsEngine = {
+  supported: !!(window.api?.ttsListVoices && window.api?.ttsSynthesize),
+  initializing: false,
+  initialized: false,
+  pending: false,
+  voices: [],
+  audioContext: null,
+  source: null,
+  requestId: 0,
+  error: null
+};
+
 const state = {
   locale: defaultLocale,
   showWizard: false,
@@ -332,7 +345,8 @@ const state = {
     return map;
   }, {}),
   previewStates: initialPreviewStates,
-  ttsState: { playing: false, voice: 'female', speed: 1, highlight: true },
+  previewAssets: {},
+  ttsState: { playing: false, voice: 'default', speed: 1, highlight: true, status: 'idle' },
   exportState: { destination: '~/Documents/Local-Bookshelf/Exports', includeMetadata: true, status: 'idle', progress: 0 },
   aiSessions: {},
   jobs: [],
@@ -341,6 +355,7 @@ const state = {
   activeScan: null,
   activeMetadata: null,
   directoryEditor: null,
+  metadataEditor: null,
   exportModal: null,
   jobLogViewer: null,
   floatingAssistantOpen: false
@@ -542,6 +557,15 @@ function applyPersistedState(persisted) {
   if (persisted.ttsState) {
     state.ttsState = { ...state.ttsState, ...persisted.ttsState };
   }
+  if (!state.ttsState.status) {
+    state.ttsState.status = 'idle';
+  }
+  if (!state.ttsState.voice) {
+    state.ttsState.voice = 'default';
+  }
+  if (!state.ttsState.speed) {
+    state.ttsState.speed = 1;
+  }
   if (persisted.exportState) {
     state.exportState = { ...state.exportState, ...persisted.exportState };
   }
@@ -641,6 +665,7 @@ async function initializeApp() {
     console.error('Failed to restore state', error);
   } finally {
     persistence.hydrating = false;
+    initializeTtsEngine();
     renderApp();
     persistence.hydrated = true;
     schedulePersist(true);
@@ -750,6 +775,29 @@ function formatPublicationYearText(year) {
   return `${numeric}`;
 }
 
+function isUnknownAuthor(author) {
+  if (!author) {
+    return true;
+  }
+  if (typeof author === 'string') {
+    const normalized = author.trim().toLowerCase();
+    return normalized === '' || normalized.startsWith('unknown') || normalized.includes('未知');
+  }
+  return false;
+}
+
+function isUnknownClassification(classification) {
+  if (!classification) {
+    return true;
+  }
+  return classification === 'unknown' || classification === '未知';
+}
+
+function isUnknownYear(year) {
+  const numeric = Number(year);
+  return !Number.isFinite(numeric) || numeric <= 0;
+}
+
 function escapeSvgText(value) {
   return (value || '')
     .replace(/&/g, '&amp;')
@@ -854,6 +902,16 @@ function getBookPreviewText(book) {
   return '';
 }
 
+function convertHtmlToPlainText(html) {
+  if (!html) {
+    return '';
+  }
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  const text = container.textContent || container.innerText || '';
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 function deepCloneBooks(books) {
   return JSON.parse(JSON.stringify(books));
 }
@@ -876,6 +934,17 @@ function setActivePage(page) {
     if (page === 'dashboard') {
       state.selectedCollectionId = null;
     }
+  }
+  if (page !== 'preview') {
+    Object.values(state.previewStates || {}).forEach((entry) => {
+      if (entry) {
+        entry.fullscreen = false;
+      }
+    });
+    if (state.ttsState.playing) {
+      stopTts(false);
+    }
+    state.metadataEditor = null;
   }
   renderApp();
 }
@@ -1007,6 +1076,7 @@ function setSelectedBook(bookId) {
   state.selectedBookId = bookId;
   const book = findBookById(bookId);
   if (book) {
+    ensurePreviewAsset(book);
     const preview = getPreviewState(bookId, book.progress?.currentPage || 1);
     preview.page = book.progress?.currentPage || 1;
     preview.zoom = 1;
@@ -1471,6 +1541,76 @@ function createBookFromFile(record, collectionId) {
     path: filePath,
     _originalSummary: summary
   };
+}
+
+function updateBookMetadata(collectionId, bookId, updates = {}) {
+  if (!collectionId || !bookId || !updates || typeof updates !== 'object') {
+    return;
+  }
+  const books = getBooks(collectionId);
+  const index = books.findIndex((entry) => entry.id === bookId);
+  if (index === -1) {
+    return;
+  }
+  const next = { ...books[index], ...updates };
+  const list = books.slice();
+  list[index] = next;
+  state.collectionBooks[collectionId] = list;
+  schedulePersist(true);
+}
+
+function openMetadataEditor(field, book) {
+  if (!book || !state.selectedCollectionId) {
+    return;
+  }
+  const editor = {
+    field,
+    bookId: book.id,
+    collectionId: state.selectedCollectionId,
+    value: '',
+    preview: null,
+    error: null
+  };
+  if (field === 'author') {
+    editor.value = !isUnknownAuthor(book.author) && typeof book.author === 'string' ? book.author : '';
+  } else if (field === 'classification') {
+    editor.value = !isUnknownClassification(book.classification) ? book.classification : '';
+  } else if (field === 'year') {
+    editor.value = !isUnknownYear(book.publicationYear) ? String(book.publicationYear) : '';
+  } else if (field === 'cover') {
+    editor.preview = book.coverUrl || null;
+  }
+  state.metadataEditor = editor;
+  renderApp();
+}
+
+function closeMetadataEditor() {
+  state.metadataEditor = null;
+  renderApp();
+}
+
+function clearMetadataField(field, book, pack) {
+  if (!book || !state.selectedCollectionId) {
+    return;
+  }
+  const metadataPack = pack.metadataEditor || {};
+  const updates = {};
+  if (field === 'author') {
+    updates.author = '';
+  } else if (field === 'classification') {
+    updates.classification = 'unknown';
+  } else if (field === 'year') {
+    updates.publicationYear = null;
+  } else if (field === 'cover') {
+    updates.coverUrl = null;
+  }
+  updateBookMetadata(state.selectedCollectionId, book.id, updates);
+  if (field === 'cover') {
+    showToast(metadataPack.coverCleared || 'Cover removed');
+  } else {
+    showToast(metadataPack.cleared || 'Field cleared');
+  }
+  renderApp();
 }
 
 function updateCollectionStats(collectionId) {
@@ -3308,8 +3448,180 @@ function renderCollectionDetail(pack) {
   return section;
 }
 
+function trimPreviewText(text, limit = 40000) {
+  if (!text) {
+    return '';
+  }
+  const normalized = text.trim();
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+  return `${normalized.slice(0, limit)}…`;
+}
+
+function wrapPreviewHtml(content) {
+  const styles = `
+    <style>
+      body { font-family: 'Inter', 'PingFang SC', sans-serif; margin: 0 auto; padding: 24px; line-height: 1.65; max-width: 760px; color: #1f2937; background: #ffffff; }
+      h1, h2, h3, h4 { color: #0f172a; }
+      img, video { max-width: 100%; height: auto; }
+      p { margin: 0 0 1em; }
+    </style>
+  `;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">${styles}</head><body>${content}</body></html>`;
+}
+
+function ensurePreviewAsset(book) {
+  if (!book) {
+    return null;
+  }
+  const cached = state.previewAssets[book.id];
+  if (cached) {
+    return cached;
+  }
+  if (!book.path || !window.api?.loadPreviewAsset) {
+    const fallback = trimPreviewText(getBookPreviewText(book) || getBookSummaryText(book));
+    const result = fallback
+      ? { status: 'ready', kind: 'text', content: fallback }
+      : { status: 'error', error: 'unavailable' };
+    state.previewAssets[book.id] = result;
+    return result;
+  }
+  state.previewAssets[book.id] = { status: 'loading' };
+  window.api
+    .loadPreviewAsset({ path: book.path, format: book.format })
+    .then((response) => {
+      if (response?.success) {
+        const payload = { ...response, status: 'ready' };
+        if (payload.kind === 'text') {
+          payload.content = trimPreviewText(payload.content);
+        }
+        state.previewAssets[book.id] = payload;
+      } else {
+        state.previewAssets[book.id] = {
+          status: 'error',
+          error: response?.error || 'unavailable'
+        };
+      }
+      renderApp();
+    })
+    .catch((error) => {
+      state.previewAssets[book.id] = { status: 'error', error: error?.message || 'unavailable' };
+      renderApp();
+    });
+  return state.previewAssets[book.id];
+}
+
+function getPreviewAssetText(book) {
+  if (!book) {
+    return '';
+  }
+  const asset = state.previewAssets[book.id];
+  if (!asset || asset.status !== 'ready') {
+    return '';
+  }
+  if (asset.kind === 'text') {
+    return asset.content || '';
+  }
+  if (asset.kind === 'html') {
+    return convertHtmlToPlainText(asset.content || '');
+  }
+  return '';
+}
+
+function renderPreviewViewer(pack, book, previewState) {
+  const asset = ensurePreviewAsset(book);
+  const classes = [`fit-${previewState.fit}`];
+  if (previewState.fullscreen) {
+    classes.push('fullscreen');
+  }
+  const viewer = createElement('div', { className: `preview-viewer ${classes.join(' ')}` });
+  if (!asset || asset.status === 'loading') {
+    viewer.appendChild(createElement('p', { className: 'preview-loading', text: pack.previewPanel.loadingPreview }));
+    return viewer;
+  }
+  if (asset.status === 'error') {
+    const message = asset.error
+      ? `${pack.previewPanel.unavailable} (${asset.error})`
+      : pack.previewPanel.unavailable;
+    viewer.appendChild(createElement('p', { className: 'preview-error', text: message }));
+    return viewer;
+  }
+  if (asset.kind === 'dataUrl') {
+    const frameWrapper = createElement('div', { className: 'preview-frame-wrapper' });
+    frameWrapper.style.transform = `scale(${previewState.zoom})`;
+    frameWrapper.style.transformOrigin = 'top left';
+    frameWrapper.style.width = `${(1 / previewState.zoom) * 100}%`;
+    const frame = createElement('iframe', {
+      className: 'preview-frame',
+      attributes: {
+        src: asset.data,
+        title: `${book.title} preview`,
+        sandbox: 'allow-same-origin allow-scripts',
+        allow: 'fullscreen'
+      }
+    });
+    frame.setAttribute('loading', 'lazy');
+    frameWrapper.appendChild(frame);
+    viewer.appendChild(frameWrapper);
+    return viewer;
+  }
+  if (asset.kind === 'html') {
+    const frameWrapper = createElement('div', { className: 'preview-frame-wrapper' });
+    frameWrapper.style.transform = `scale(${previewState.zoom})`;
+    frameWrapper.style.transformOrigin = 'top left';
+    frameWrapper.style.width = `${(1 / previewState.zoom) * 100}%`;
+    const frame = createElement('iframe', {
+      className: 'preview-frame',
+      attributes: {
+        srcdoc: wrapPreviewHtml(asset.content || ''),
+        title: `${book.title} preview`,
+        sandbox: 'allow-same-origin'
+      }
+    });
+    frame.setAttribute('loading', 'lazy');
+    frameWrapper.appendChild(frame);
+    viewer.appendChild(frameWrapper);
+    return viewer;
+  }
+  const textBlock = createElement('pre', {
+    className: 'preview-text',
+    text: asset.content || trimPreviewText(getBookPreviewText(book)) || ''
+  });
+  textBlock.setAttribute('dir', 'auto');
+  textBlock.style.fontSize = `${Math.max(0.8, previewState.zoom)}rem`;
+  if (state.ttsState.playing && state.ttsState.highlight) {
+    textBlock.classList.add('tts-active');
+  }
+  viewer.appendChild(textBlock);
+  return viewer;
+}
+
+function exitPreviewFullscreen() {
+  let changed = false;
+  Object.values(state.previewStates || {}).forEach((entry) => {
+    if (entry && entry.fullscreen) {
+      entry.fullscreen = false;
+      changed = true;
+    }
+  });
+  if (changed) {
+    renderApp();
+  }
+}
+
+function syncFullscreenClass() {
+  const hasFullscreen = Object.values(state.previewStates || {}).some((entry) => entry?.fullscreen);
+  document.body.classList.toggle('preview-fullscreen-active', hasFullscreen);
+}
+
 function createPreviewSection(pack, book, previewState) {
   const panel = createElement('section', { className: 'preview-panel' });
+  if (previewState.fullscreen) {
+    panel.classList.add('fullscreen');
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+  }
   panel.appendChild(createElement('h3', { text: pack.previewPanel.title }));
   panel.appendChild(
     createElement('p', { className: 'preview-summary', text: getBookSummaryText(book) })
@@ -3352,12 +3664,21 @@ function createPreviewSection(pack, book, previewState) {
     previewState.page = Math.min(book.pages, previewState.page + 1);
     renderApp();
   });
+  const fullscreenToggle = createElement('button', {
+    text: previewState.fullscreen ? pack.previewPanel.exitFullscreen : pack.previewPanel.enterFullscreen
+  });
+  fullscreenToggle.type = 'button';
+  fullscreenToggle.addEventListener('click', () => {
+    previewState.fullscreen = !previewState.fullscreen;
+    renderApp();
+  });
   controls.appendChild(zoomOut);
   controls.appendChild(zoomIn);
   controls.appendChild(fitWidth);
   controls.appendChild(fitPage);
   controls.appendChild(prevPage);
   controls.appendChild(nextPage);
+  controls.appendChild(fullscreenToggle);
   panel.appendChild(controls);
 
   panel.appendChild(
@@ -3367,14 +3688,7 @@ function createPreviewSection(pack, book, previewState) {
     })
   );
 
-  const content = createElement('div', {
-    className: `preview-content fit-${previewState.fit}${
-      state.ttsState.playing && state.ttsState.highlight ? ' tts-active' : ''
-    }`,
-    text: getBookPreviewText(book)
-  });
-  content.style.transform = `scale(${previewState.zoom})`;
-  panel.appendChild(content);
+  panel.appendChild(renderPreviewViewer(pack, book, previewState));
 
   const bookmarks = getBookmarks(book.id);
   const bookmarkButton = createElement('button', {
@@ -3413,6 +3727,7 @@ function renderPreviewPage(pack) {
     return renderCollectionPage(pack);
   }
   state.selectedBookId = book.id;
+  ensurePreviewAsset(book);
   const previewState = getPreviewState(book.id, book.progress?.currentPage || 1);
 
   const page = createElement('main', { className: 'page preview-page' });
@@ -3448,65 +3763,390 @@ function renderPreviewPage(pack) {
   layout.appendChild(mainColumn);
 
   const sideColumn = createElement('aside', { className: 'preview-side' });
-  sideColumn.appendChild(renderBookCover(book, 'avatar'));
+  sideColumn.appendChild(renderEditableCover(book, pack));
   sideColumn.appendChild(renderTtsPanel(pack, book));
-  const metadataCard = createElement('div', { className: 'preview-metadata' });
-  metadataCard.appendChild(createElement('h4', { text: pack.previewPanel.metadataTitle }));
-  metadataCard.appendChild(createElement('p', { text: `${pack.previewPanel.formatLabel}: ${getFormatLabel(book.format)}` }));
-  metadataCard.appendChild(createElement('p', { text: `${pack.previewPanel.sizeLabel}: ${formatSize(book.sizeMB)}` }));
-  metadataCard.appendChild(createElement('p', { text: `${pack.previewPanel.pagesLabel}: ${book.pages}` }));
-  metadataCard.appendChild(
-    createElement('p', {
-      text: `${pack.previewPanel.updatedLabel}: ${formatDate(book.metadataUpdatedAt || book.dateAdded)}`
-    })
-  );
-  sideColumn.appendChild(metadataCard);
+  sideColumn.appendChild(renderMetadataCard(pack, book));
   layout.appendChild(sideColumn);
   page.appendChild(layout);
 
   return page;
 }
 
+function getNarrationText(book) {
+  if (!book) {
+    return '';
+  }
+  const assetText = getPreviewAssetText(book);
+  if (assetText) {
+    return trimPreviewText(assetText);
+  }
+  const previewText = getBookPreviewText(book);
+  if (previewText) {
+    return trimPreviewText(previewText);
+  }
+  return trimPreviewText(getBookSummaryText(book));
+}
+
+async function initializeTtsEngine() {
+  if (!ttsEngine.supported || ttsEngine.initializing || ttsEngine.initialized) {
+    return;
+  }
+  ttsEngine.initializing = true;
+  ttsEngine.error = null;
+  try {
+    const response = await window.api.ttsListVoices();
+    if (response?.success && Array.isArray(response.voices)) {
+      ttsEngine.voices = response.voices.map((voice) => ({
+        id: voice.id,
+        label: voice.label || voice.name || voice.id,
+        language: voice.language || voice.lang || 'en'
+      }));
+      if (!ttsEngine.voices.length) {
+        ttsEngine.voices.push({ id: 'default', label: 'Default', language: 'en' });
+      }
+      if (!state.ttsState.voice || !ttsEngine.voices.some((voice) => voice.id === state.ttsState.voice)) {
+        state.ttsState.voice = ttsEngine.voices[0].id;
+      }
+      ttsEngine.initialized = true;
+    } else {
+      ttsEngine.error = response?.error || 'unavailable';
+    }
+  } catch (error) {
+    console.warn('Failed to initialize TTS engine', error);
+    ttsEngine.error = error?.message || 'unavailable';
+  } finally {
+    ttsEngine.initializing = false;
+    renderApp();
+  }
+}
+
+function ensureAudioContext() {
+  if (!ttsEngine.supported) {
+    return null;
+  }
+  if (!ttsEngine.audioContext) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+      return null;
+    }
+    ttsEngine.audioContext = new AudioContextClass();
+  }
+  return ttsEngine.audioContext;
+}
+
+function base64ToArrayBuffer(base64) {
+  const binary = window.atob(base64);
+  const length = binary.length;
+  const bytes = new Uint8Array(length);
+  for (let i = 0; i < length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+function stopTts(shouldRender = true) {
+  ttsEngine.requestId += 1;
+  ttsEngine.pending = false;
+  if (ttsEngine.source) {
+    try {
+      ttsEngine.source.stop();
+    } catch (error) {
+      console.warn('Failed to stop TTS playback', error);
+    }
+    try {
+      ttsEngine.source.disconnect();
+    } catch (error) {
+      console.warn('Failed to release TTS audio nodes', error);
+    }
+  }
+  ttsEngine.source = null;
+  state.ttsState.playing = false;
+  state.ttsState.status = 'idle';
+  if (shouldRender) {
+    renderApp();
+  }
+}
+
+function startTts(pack, book) {
+  if (!ttsEngine.supported) {
+    showToast(pack.ttsPanel.unsupported);
+    return;
+  }
+  initializeTtsEngine();
+  if (ttsEngine.initializing) {
+    showToast(pack.ttsPanel.initializing);
+    return;
+  }
+  if (ttsEngine.pending && state.ttsState.status === 'generating') {
+    showToast(pack.ttsPanel.generatingMessage || pack.ttsPanel.loading);
+    return;
+  }
+  const asset = ensurePreviewAsset(book);
+  if (asset && asset.status === 'loading') {
+    showToast(pack.ttsPanel.loading);
+    return;
+  }
+  const narration = getNarrationText(book);
+  if (!narration) {
+    showToast(pack.ttsPanel.noText);
+    return;
+  }
+  const context = ensureAudioContext();
+  if (!context) {
+    showToast(pack.ttsPanel.unsupported);
+    return;
+  }
+  const requestId = ++ttsEngine.requestId;
+  ttsEngine.pending = true;
+  state.ttsState.status = 'generating';
+  state.ttsState.playing = false;
+  renderApp();
+  window.api
+    .ttsSynthesize({ text: narration, voice: state.ttsState.voice })
+    .then(async (response) => {
+      if (requestId !== ttsEngine.requestId) {
+        return;
+      }
+      if (!response?.success) {
+        throw response?.error || new Error('unavailable');
+      }
+      const arrayBuffer = base64ToArrayBuffer(response.audio);
+      const audioContext = ensureAudioContext();
+      if (!audioContext) {
+        throw new Error('Audio unavailable');
+      }
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+      return new Promise((resolve, reject) => {
+        audioContext.decodeAudioData(
+          arrayBuffer,
+          (buffer) => resolve({ buffer, sampleRate: response.sampleRate }),
+          (error) => reject(error)
+        );
+      });
+    })
+    .then((payload) => {
+      if (!payload || requestId !== ttsEngine.requestId) {
+        return;
+      }
+      const audioContext = ensureAudioContext();
+      if (!audioContext) {
+        throw new Error('Audio unavailable');
+      }
+      const source = audioContext.createBufferSource();
+      source.buffer = payload.buffer;
+      source.playbackRate.value = Number(state.ttsState.speed) || 1;
+      source.onended = () => {
+        if (requestId !== ttsEngine.requestId) {
+          return;
+        }
+        state.ttsState.playing = false;
+        state.ttsState.status = 'idle';
+        ttsEngine.source = null;
+        renderApp();
+      };
+      source.connect(audioContext.destination);
+      ttsEngine.source = source;
+      ttsEngine.pending = false;
+      state.ttsState.playing = true;
+      state.ttsState.status = 'playing';
+      source.start(0);
+      renderApp();
+    })
+    .catch((error) => {
+      if (requestId !== ttsEngine.requestId) {
+        return;
+      }
+      console.error('Failed to synthesize audio', error);
+      ttsEngine.pending = false;
+      state.ttsState.playing = false;
+      state.ttsState.status = 'idle';
+      const code = typeof error === 'string' ? error : error?.code || error?.message;
+      if (code === 'busy') {
+        showToast(pack.ttsPanel.busy);
+      } else if (code === 'empty') {
+        showToast(pack.ttsPanel.noText);
+      } else {
+        showToast(pack.ttsPanel.error);
+      }
+      renderApp();
+    });
+}
+
+function renderEditableMetadataRow(pack, book, field, label, value) {
+  const metadataPack = pack.metadataEditor || {};
+  const row = createElement('div', { className: 'metadata-editable' });
+  if (field === 'author' && isUnknownAuthor(book.author)) {
+    row.classList.add('unknown');
+  } else if (field === 'classification' && isUnknownClassification(book.classification)) {
+    row.classList.add('unknown');
+  } else if (field === 'year' && isUnknownYear(book.publicationYear)) {
+    row.classList.add('unknown');
+  }
+  row.appendChild(createElement('span', { className: 'metadata-label', text: label }));
+  row.appendChild(createElement('span', { className: 'metadata-value', text: value }));
+  const actions = createElement('div', { className: 'metadata-editable-actions' });
+  const editButton = createElement('button', {
+    className: 'metadata-action-button',
+    text: metadataPack.edit || 'Edit'
+  });
+  editButton.type = 'button';
+  editButton.addEventListener('click', () => openMetadataEditor(field, book));
+  const clearButton = createElement('button', {
+    className: 'metadata-action-button',
+    text: metadataPack.clear || 'Clear'
+  });
+  clearButton.type = 'button';
+  clearButton.addEventListener('click', () => clearMetadataField(field, book, pack));
+  actions.appendChild(editButton);
+  actions.appendChild(clearButton);
+  row.appendChild(actions);
+  return row;
+}
+
+function renderEditableCover(book, pack) {
+  const metadataPack = pack.metadataEditor || {};
+  const wrapper = createElement('div', { className: 'cover-editor' });
+  wrapper.appendChild(renderBookCover(book, 'avatar'));
+  if (!book.coverUrl) {
+    wrapper.classList.add('missing');
+  }
+  const actions = createElement('div', { className: 'metadata-editable-actions' });
+  const editButton = createElement('button', {
+    className: 'metadata-action-button',
+    text: metadataPack.edit || 'Edit'
+  });
+  editButton.type = 'button';
+  editButton.addEventListener('click', () => openMetadataEditor('cover', book));
+  const clearButton = createElement('button', {
+    className: 'metadata-action-button',
+    text: metadataPack.clear || 'Clear'
+  });
+  clearButton.type = 'button';
+  clearButton.addEventListener('click', () => clearMetadataField('cover', book, pack));
+  actions.appendChild(editButton);
+  actions.appendChild(clearButton);
+  wrapper.appendChild(actions);
+  return wrapper;
+}
+
+function renderMetadataCard(pack, book) {
+  const metadataPack = pack.metadataEditor || {};
+  const card = createElement('div', { className: 'preview-metadata editable' });
+  card.appendChild(createElement('h4', { text: pack.previewPanel.metadataTitle }));
+  card.appendChild(
+    renderEditableMetadataRow(
+      pack,
+      book,
+      'author',
+      metadataPack.authorLabel || pack.collectionDetail.tableHeaders?.[1] || 'Author',
+      formatAuthorText(book.author)
+    )
+  );
+  card.appendChild(
+    renderEditableMetadataRow(
+      pack,
+      book,
+      'classification',
+      metadataPack.classificationLabel || pack.collectionDetail.tableHeaders?.[2] || 'Classification',
+      getClassificationLabel(book.classification || 'unknown')
+    )
+  );
+  card.appendChild(
+    renderEditableMetadataRow(
+      pack,
+      book,
+      'year',
+      metadataPack.yearLabel || pack.collectionDetail.tableHeaders?.[3] || 'Year',
+      formatPublicationYearText(book.publicationYear)
+    )
+  );
+  card.appendChild(createElement('p', { text: `${pack.previewPanel.formatLabel}: ${getFormatLabel(book.format)}` }));
+  card.appendChild(createElement('p', { text: `${pack.previewPanel.sizeLabel}: ${formatSize(book.sizeMB)}` }));
+  card.appendChild(createElement('p', { text: `${pack.previewPanel.pagesLabel}: ${book.pages}` }));
+  card.appendChild(
+    createElement('p', {
+      text: `${pack.previewPanel.updatedLabel}: ${formatDate(book.metadataUpdatedAt || book.dateAdded)}`
+    })
+  );
+  return card;
+}
+
 function renderTtsPanel(pack, book) {
   const container = createElement('div', { className: 'tts-panel' });
   container.appendChild(createElement('h4', { text: pack.ttsPanel.title }));
+  initializeTtsEngine();
   const controls = createElement('div', { className: 'tts-controls' });
-  const playButton = createElement('button', { text: state.ttsState.playing ? pack.ttsPanel.pause : pack.ttsPanel.play });
+  const supported = ttsEngine.supported;
+  const hasError = !!ttsEngine.error;
+  const initializing = ttsEngine.initializing;
+  const isPlaying = state.ttsState.playing;
+  const isGenerating = state.ttsState.status === 'generating';
+  const disabled = !supported || initializing || hasError;
+  const buttonLabel = isPlaying ? pack.ttsPanel.stop : pack.ttsPanel.play;
+  const playButton = createElement('button', { text: isGenerating ? pack.ttsPanel.stop : buttonLabel });
   playButton.type = 'button';
+  playButton.disabled = disabled && !isPlaying && !isGenerating;
   playButton.addEventListener('click', () => {
-    state.ttsState.playing = !state.ttsState.playing;
-    renderApp();
+    if (state.ttsState.playing || state.ttsState.status === 'generating') {
+      stopTts();
+    } else {
+      startTts(pack, book);
+    }
   });
-  const speedSelect = createElement('select');
-  [0.5, 1, 1.25, 1.5, 2, 3].forEach((value) => {
-    const option = createElement('option', { text: `${value}×` });
+  const speedSelect = createElement('select', { className: 'tts-select' });
+  speedSelect.disabled = disabled || isGenerating;
+  [0.5, 0.75, 1, 1.25, 1.5, 2].forEach((value) => {
+    const label = `${value}×`;
+    const option = createElement('option', { text: label });
     option.value = value;
-    if (state.ttsState.speed === value) {
+    if (Number(state.ttsState.speed || 1) === value) {
       option.selected = true;
     }
     speedSelect.appendChild(option);
   });
   speedSelect.addEventListener('change', (event) => {
-    state.ttsState.speed = Number(event.target.value);
-  });
-
-  const voiceSelect = createElement('select');
-  [
-    { key: 'female', label: pack.ttsPanel.female },
-    { key: 'male', label: pack.ttsPanel.male },
-    { key: 'neutral', label: pack.ttsPanel.neutral }
-  ].forEach((option) => {
-    const node = createElement('option', { text: option.label });
-    node.value = option.key;
-    if (state.ttsState.voice === option.key) {
-      node.selected = true;
+    const value = Number(event.target.value) || 1;
+    state.ttsState.speed = value;
+    if (ttsEngine.source) {
+      try {
+        ttsEngine.source.playbackRate.value = value;
+      } catch (error) {
+        console.warn('Failed to adjust playback rate', error);
+      }
     }
-    voiceSelect.appendChild(node);
+    renderApp();
   });
+  const voiceSelect = createElement('select', { className: 'tts-select' });
+  const hasVoices = ttsEngine.voices.length > 0;
+  voiceSelect.disabled = disabled || !hasVoices || isGenerating;
+  if (hasVoices) {
+    ttsEngine.voices.forEach((voice) => {
+      const languageLabel =
+        voice.language && typeof voice.language === 'string'
+          ? voice.language.toUpperCase()
+          : voice.language || '';
+      const label = languageLabel ? `${voice.label} · ${languageLabel}` : voice.label;
+      const option = createElement('option', { text: label });
+      option.value = voice.id;
+      if (state.ttsState.voice === voice.id) {
+        option.selected = true;
+      }
+      voiceSelect.appendChild(option);
+    });
+  } else {
+    voiceSelect.appendChild(createElement('option', { text: initializing ? pack.ttsPanel.initializing : pack.ttsPanel.loading }));
+  }
   voiceSelect.addEventListener('change', (event) => {
     state.ttsState.voice = event.target.value;
+    if (state.ttsState.playing) {
+      stopTts(false);
+      startTts(pack, book);
+    } else {
+      renderApp();
+    }
   });
-
   const highlightToggle = createElement('label', { className: 'highlight-toggle' });
   const highlightInput = createElement('input', { attributes: { type: 'checkbox' } });
   highlightInput.checked = state.ttsState.highlight;
@@ -3516,7 +4156,6 @@ function renderTtsPanel(pack, book) {
   });
   highlightToggle.appendChild(highlightInput);
   highlightToggle.appendChild(createElement('span', { text: pack.ttsPanel.highlight }));
-
   controls.appendChild(playButton);
   controls.appendChild(createElement('span', { text: `${pack.ttsPanel.speed}` }));
   controls.appendChild(speedSelect);
@@ -3524,17 +4163,23 @@ function renderTtsPanel(pack, book) {
   controls.appendChild(voiceSelect);
   controls.appendChild(highlightToggle);
   container.appendChild(controls);
-
-  if (!book.tts) {
-    container.appendChild(
-      createElement('p', {
-        className: 'tts-warning',
-        text: state.locale === 'zh' ? '该格式暂不支持朗读' : 'TTS is not available for this format.'
-      })
-    );
+  if (!supported) {
+    container.appendChild(createElement('p', { className: 'tts-warning', text: pack.ttsPanel.unsupported }));
+  } else if (hasError) {
+    const detail = ttsEngine.error ? ` (${ttsEngine.error})` : '';
+    container.appendChild(createElement('p', { className: 'tts-warning', text: `${pack.ttsPanel.error}${detail}` }));
+  } else if (initializing) {
+    container.appendChild(createElement('p', { className: 'tts-helper', text: pack.ttsPanel.initializing }));
+  } else if (isGenerating) {
+    container.appendChild(createElement('p', { className: 'tts-helper', text: pack.ttsPanel.generating }));
+  } else if (ttsEngine.pending) {
+    container.appendChild(createElement('p', { className: 'tts-helper', text: pack.ttsPanel.loading }));
+  } else if (!hasVoices) {
+    container.appendChild(createElement('p', { className: 'tts-helper', text: pack.ttsPanel.loading }));
   }
   return container;
 }
+
 
 function renderExportModal(pack) {
   if (!state.exportModal) {
@@ -4439,6 +5084,154 @@ function renderWizardOverlay(pack) {
   return overlay;
 }
 
+function renderBookMetadataEditorOverlay(pack) {
+  const editor = state.metadataEditor;
+  if (!editor) {
+    return null;
+  }
+  const metadataPack = pack.metadataEditor || {};
+  const overlay = createElement('div', { className: 'modal-overlay metadata-editor-overlay' });
+  const panel = createElement('div', { className: 'modal-panel metadata-editor-modal' });
+  const titles = {
+    author: metadataPack.authorTitle,
+    classification: metadataPack.classificationTitle,
+    year: metadataPack.yearTitle,
+    cover: metadataPack.coverTitle
+  };
+  panel.appendChild(createElement('h3', { text: titles[editor.field] || metadataPack.title || 'Edit metadata' }));
+
+  if (editor.field === 'cover') {
+    const acceptTypes = supportedCoverTypes.length ? supportedCoverTypes.join(',') : 'image/*';
+    if (metadataPack.coverUploadHint) {
+      panel.appendChild(createElement('p', { className: 'metadata-helper', text: metadataPack.coverUploadHint }));
+    }
+    const fileInput = createElement('input', {
+      className: 'metadata-input',
+      attributes: { type: 'file', accept: acceptTypes }
+    });
+    fileInput.addEventListener('change', (event) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
+      }
+      if (supportedCoverTypes.length && file.type && !supportedCoverTypes.includes(file.type)) {
+        state.metadataEditor.error = 'invalidImage';
+        renderApp();
+        return;
+      }
+      if (file.size > MAX_COVER_SIZE_BYTES) {
+        state.metadataEditor.error = 'invalidImage';
+        renderApp();
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        state.metadataEditor.preview = reader.result;
+        state.metadataEditor.error = null;
+        renderApp();
+      };
+      reader.onerror = () => {
+        state.metadataEditor.error = 'invalidImage';
+        renderApp();
+      };
+      reader.readAsDataURL(file);
+    });
+    panel.appendChild(fileInput);
+    if (editor.preview) {
+      panel.appendChild(
+        createElement('img', {
+          className: 'metadata-cover-preview',
+          attributes: {
+            src: editor.preview,
+            alt: metadataPack.coverPreview || 'Cover preview'
+          }
+        })
+      );
+    }
+  } else {
+    const isYear = editor.field === 'year';
+    const placeholderKey = `${editor.field}Placeholder`;
+    const input = createElement('input', {
+      className: 'metadata-input',
+      attributes: {
+        type: isYear ? 'number' : 'text',
+        value: editor.value || '',
+        placeholder: metadataPack[placeholderKey] || (isYear ? 'YYYY' : '')
+      }
+    });
+    if (isYear) {
+      input.setAttribute('min', '0');
+      input.setAttribute('max', `${new Date().getFullYear() + 2}`);
+      input.setAttribute('step', '1');
+    }
+    input.addEventListener('input', (event) => {
+      state.metadataEditor.value = event.target.value;
+      state.metadataEditor.error = null;
+    });
+    panel.appendChild(input);
+  }
+
+  if (editor.error === 'invalidYear') {
+    panel.appendChild(createElement('p', { className: 'metadata-error', text: metadataPack.invalidYear || 'Please enter a valid year.' }));
+  } else if (editor.error === 'invalidImage') {
+    panel.appendChild(createElement('p', { className: 'metadata-error', text: metadataPack.invalidImage || 'Unsupported image type.' }));
+  }
+
+  const actions = createElement('div', { className: 'modal-actions' });
+  const cancelButton = createElement('button', {
+    className: 'ghost-button',
+    text: metadataPack.cancel || pack.exportDialog.cancel || 'Cancel'
+  });
+  cancelButton.type = 'button';
+  cancelButton.addEventListener('click', () => closeMetadataEditor());
+
+  const saveButton = createElement('button', {
+    className: 'primary-button',
+    text: metadataPack.save || 'Save'
+  });
+  saveButton.type = 'button';
+  if (editor.field === 'cover') {
+    saveButton.disabled = !state.metadataEditor.preview;
+    saveButton.addEventListener('click', () => {
+      if (!state.metadataEditor.preview) {
+        state.metadataEditor.error = 'invalidImage';
+        renderApp();
+        return;
+      }
+      updateBookMetadata(editor.collectionId, editor.bookId, { coverUrl: state.metadataEditor.preview });
+      showToast(metadataPack.coverSaved || 'Cover updated');
+      closeMetadataEditor();
+    });
+  } else {
+    saveButton.addEventListener('click', () => {
+      const rawValue = (state.metadataEditor.value || '').toString().trim();
+      const updates = {};
+      if (editor.field === 'author') {
+        updates.author = rawValue;
+      } else if (editor.field === 'classification') {
+        updates.classification = rawValue || 'unknown';
+      } else if (editor.field === 'year') {
+        const numeric = Number(rawValue);
+        if (!Number.isFinite(numeric) || numeric <= 0) {
+          state.metadataEditor.error = 'invalidYear';
+          renderApp();
+          return;
+        }
+        updates.publicationYear = numeric;
+      }
+      updateBookMetadata(editor.collectionId, editor.bookId, updates);
+      showToast(metadataPack.saved || 'Book details updated');
+      closeMetadataEditor();
+    });
+  }
+  actions.appendChild(cancelButton);
+  actions.appendChild(saveButton);
+  panel.appendChild(actions);
+
+  overlay.appendChild(panel);
+  return overlay;
+}
+
 function renderMetadataOverlay(pack) {
   if (!state.activeMetadata || state.activeMetadata.visible === false) {
     return null;
@@ -4871,6 +5664,7 @@ function renderToast() {
 
 function renderApp() {
   const pack = getPack();
+  syncFullscreenClass();
   root.innerHTML = '';
   const appShell = createElement('div', { className: 'app-shell' });
   appShell.appendChild(renderTopBar(pack));
@@ -4902,6 +5696,10 @@ function renderApp() {
       root.appendChild(scanOverlay);
     }
   }
+  const metadataEditorOverlay = renderBookMetadataEditorOverlay(pack);
+  if (metadataEditorOverlay) {
+    root.appendChild(metadataEditorOverlay);
+  }
   const metadataOverlay = renderMetadataOverlay(pack);
   if (metadataOverlay) {
     root.appendChild(metadataOverlay);
@@ -4924,6 +5722,12 @@ function renderApp() {
   }
   schedulePersist();
 }
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    exitPreviewFullscreen();
+  }
+});
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
