@@ -143,6 +143,16 @@ const collectionEmojiMap = bootstrapData.collectionEmojiMap || {};
 const classificationEmojiMap = bootstrapData.classificationEmojiMap || {};
 const enrichmentLabels = bootstrapData.enrichmentLabels || {};
 
+if (!classificationCatalog.unknown) {
+  classificationCatalog.unknown = {
+    en: UNKNOWN_LABELS.classification.en,
+    zh: UNKNOWN_LABELS.classification.zh
+  };
+}
+if (!classificationEmojiMap.unknown) {
+  classificationEmojiMap.unknown = '❔';
+}
+
 const defaultBookExtensions = ['pdf', 'epub', 'mobi', 'docx', 'txt', 'azw3'];
 const supportedBookExtensions = new Set(
   (Object.keys(formatCatalog || {}).length ? Object.keys(formatCatalog) : defaultBookExtensions).map((key) =>
@@ -154,6 +164,10 @@ const classificationOptions =
   Array.isArray(bootstrapData.classificationOptions) && bootstrapData.classificationOptions.length
     ? bootstrapData.classificationOptions
     : Object.keys(classificationCatalog);
+
+if (!classificationOptions.includes('unknown')) {
+  classificationOptions.unshift('unknown');
+}
 
 const formatOptions =
   Array.isArray(bootstrapData.formatOptions) && bootstrapData.formatOptions.length
@@ -173,6 +187,10 @@ const defaultSettingsFallback = {
   previewPath: '~/Library Application Support/LocalBookshelf/previews',
   embeddingsPath: '~/Library Application Support/LocalBookshelf/embeddings',
   paginationDefault: 20,
+  aiProvider: 'openai',
+  aiEndpoint: 'https://api.openai.com/v1/chat/completions',
+  aiModel: 'gpt-4o-mini',
+  aiApiKey: '',
   theme: 'system',
   analytics: true,
   offline: false
@@ -189,6 +207,85 @@ const defaultWizardData = {
   coverName: defaultWizardTemplate.coverName || '',
   coverFile: null
 };
+
+const AI_PROVIDERS = [
+  { key: 'openai', label: { en: 'OpenAI', zh: 'OpenAI' } },
+  { key: 'deepseek', label: { en: 'DeepSeek', zh: 'DeepSeek' } },
+  { key: 'kimi', label: { en: 'Kimi', zh: 'Kimi' } },
+  { key: 'doubao', label: { en: 'Doubao', zh: '豆包' } },
+  { key: 'qwen', label: { en: 'Qwen', zh: '通义千问' } },
+  { key: 'ollama', label: { en: 'Ollama (local)', zh: 'Ollama（本地）' } }
+];
+
+const UNKNOWN_LABELS = {
+  author: { en: 'Unknown author', zh: '未知作者' },
+  classification: { en: 'Unknown classification', zh: '未知分类' },
+  year: { en: 'Unknown year', zh: '未知年份' },
+  cover: { en: 'No cover available', zh: '暂无封面' }
+};
+
+const METADATA_SAMPLES = [
+  {
+    author: 'Liu Cixin',
+    classification: 'I2067',
+    year: 2008,
+    summary: {
+      en: 'Award-winning science fiction exploring cosmic sociology and humanity\'s future.',
+      zh: '获奖科幻作品，聚焦宇宙社会学与人类命运。'
+    },
+    colors: ['#0f172a', '#38bdf8']
+  },
+  {
+    author: 'Rachel Carson',
+    classification: 'X4',
+    year: 1962,
+    summary: {
+      en: 'Seminal environmental writing that reshaped ecological awareness.',
+      zh: '奠定现代生态意识的开创性著作。'
+    },
+    colors: ['#155e75', '#67e8f9']
+  },
+  {
+    author: 'Jane Jacobs',
+    classification: 'TU201',
+    year: 1961,
+    summary: {
+      en: 'Urban design classic unpacking the life of vibrant neighbourhoods.',
+      zh: '城市设计经典，解析街区的活力之源。'
+    },
+    colors: ['#1f2937', '#f97316']
+  },
+  {
+    author: 'Ada Lovelace',
+    classification: 'TB472',
+    year: 1843,
+    summary: {
+      en: 'Historical notes on computation and creative mathematical thinking.',
+      zh: '记录计算思想与创意数学的历史笔记。'
+    },
+    colors: ['#4c1d95', '#a855f7']
+  },
+  {
+    author: 'Wang Anyi',
+    classification: 'I267',
+    year: 2000,
+    summary: {
+      en: 'Lyrical modern Chinese literature capturing urban memory.',
+      zh: '抒情的当代文学，捕捉城市与记忆。'
+    },
+    colors: ['#7c2d12', '#f59e0b']
+  },
+  {
+    author: 'Elinor Ostrom',
+    classification: 'F49',
+    year: 1990,
+    summary: {
+      en: 'Groundbreaking governance research on shared resources and cooperation.',
+      zh: '关于共享资源治理的开创性研究，强调协作。'
+    },
+    colors: ['#0f766e', '#34d399']
+  }
+];
 
 const initialBookmarks = Object.values(initialCollectionBooks)
   .flat()
@@ -246,7 +343,8 @@ const state = {
   activeMetadata: null,
   directoryEditor: null,
   exportModal: null,
-  jobLogViewer: null
+  jobLogViewer: null,
+  floatingAssistantOpen: false
 };
 
 let jobCounter = 0;
@@ -387,7 +485,8 @@ function serializeState() {
     exportState: JSON.parse(JSON.stringify(state.exportState || {})),
     aiSessions: JSON.parse(JSON.stringify(state.aiSessions || {})),
     selectedCollectionId: state.selectedCollectionId,
-    selectedBookId: state.selectedBookId
+    selectedBookId: state.selectedBookId,
+    floatingAssistantOpen: state.floatingAssistantOpen
   };
 }
 
@@ -455,6 +554,9 @@ function applyPersistedState(persisted) {
   }
   if (persisted.selectedBookId) {
     state.selectedBookId = persisted.selectedBookId;
+  }
+  if (typeof persisted.floatingAssistantOpen === 'boolean') {
+    state.floatingAssistantOpen = persisted.floatingAssistantOpen;
   }
 }
 
@@ -572,16 +674,119 @@ function createElement(tag, options = {}) {
   return element;
 }
 
+function renderBookCover(book, size = 'default') {
+  const classes = ['book-cover'];
+  if (size && size !== 'default') {
+    classes.push(size);
+  }
+  const placeholderText = getUnknownText('cover');
+  const createPlaceholder = () =>
+    createElement('span', { className: 'cover-placeholder-text', text: placeholderText });
+
+  if (!book || !book.coverUrl) {
+    const wrapper = createElement('div', { className: classes.join(' ') });
+    wrapper.appendChild(createPlaceholder());
+    return wrapper;
+  }
+
+  const image = createElement('img', {
+    attributes: { src: book.coverUrl, alt: book?.title || placeholderText }
+  });
+  const wrapper = createElement('div', { className: classes.join(' ') });
+  image.addEventListener('error', () => {
+    wrapper.innerHTML = '';
+    wrapper.appendChild(createPlaceholder());
+  });
+  wrapper.appendChild(image);
+  return wrapper;
+}
+
 function getPack() {
   return translations[state.locale] || translations.en || Object.values(translations)[0] || {};
 }
 
+function getLocaleKey() {
+  return state.locale === 'zh' ? 'zh' : 'en';
+}
+
+function getAiProviderDisplayName(providerKey) {
+  const entry = AI_PROVIDERS.find((item) => item.key === providerKey);
+  if (!entry) {
+    return providerKey || 'AI';
+  }
+  const labels = entry.label || {};
+  return labels[getLocaleKey()] || labels.en || entry.key;
+}
+
+function getUnknownText(key) {
+  const labels = UNKNOWN_LABELS[key];
+  if (!labels) {
+    return key;
+  }
+  return labels[getLocaleKey()] || labels.en;
+}
+
+function formatAuthorText(author) {
+  if (!author) {
+    return getUnknownText('author');
+  }
+  if (typeof author === 'string') {
+    const parts = author.split('·');
+    if (parts.length >= 2) {
+      return parts[getLocaleKey() === 'zh' ? parts.length - 1 : 0].trim();
+    }
+    if (author.trim().toLowerCase().startsWith('unknown')) {
+      return getUnknownText('author');
+    }
+    return author;
+  }
+  return `${author}`;
+}
+
+function formatPublicationYearText(year) {
+  const numeric = Number(year);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return getUnknownText('year');
+  }
+  return `${numeric}`;
+}
+
+function escapeSvgText(value) {
+  return (value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function createCoverDataUrl(title, author, colors = []) {
+  const [primary, secondary] = colors.length >= 2 ? colors : ['#1d4ed8', '#38bdf8'];
+  const safeTitle = escapeSvgText((title || '').slice(0, 24));
+  const safeAuthor = escapeSvgText((author || '').slice(0, 32));
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 480">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${primary}" />
+      <stop offset="100%" stop-color="${secondary}" />
+    </linearGradient>
+  </defs>
+  <rect width="320" height="480" rx="28" fill="url(#g)" />
+  <text x="30" y="220" font-family="'Inter', 'PingFang SC', sans-serif" font-size="26" font-weight="700" fill="#f8fafc">
+    ${safeTitle}
+  </text>
+  <text x="30" y="270" font-family="'Inter', 'PingFang SC', sans-serif" font-size="18" fill="#e0f2fe">
+    ${safeAuthor}
+  </text>
+</svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
 function formatDate(dateString) {
   if (!dateString) {
-    return state.locale === 'zh' ? '暂无记录' : 'No record';
+    return getLocaleKey() === 'zh' ? '暂无记录' : 'No record';
   }
   const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-  return date.toLocaleString(state.locale === 'zh' ? 'zh-CN' : 'en-US', {
+  return date.toLocaleString(getLocaleKey() === 'zh' ? 'zh-CN' : 'en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -600,9 +805,12 @@ function formatSize(sizeMB) {
 function getClassificationLabel(key) {
   const labels = classificationCatalog[key];
   if (!labels) {
+    if (key === 'unknown') {
+      return getUnknownText('classification');
+    }
     return key;
   }
-  return labels[state.locale] || labels.en;
+  return labels[getLocaleKey()] || labels.en;
 }
 
 function getFormatLabel(key) {
@@ -618,7 +826,7 @@ function getEnrichmentLabel(key) {
   if (!labels) {
     return key;
   }
-  return labels[state.locale] || labels.en;
+  return labels[getLocaleKey()] || labels.en;
 }
 
 function getBookSummaryText(book) {
@@ -866,6 +1074,23 @@ function saveDirectoryEditor() {
   }
 }
 
+function generateMetadataForBook(book, index) {
+  const sample = METADATA_SAMPLES[index % METADATA_SAMPLES.length] || METADATA_SAMPLES[0];
+  const localeKey = getLocaleKey();
+  const classificationPool = classificationOptions.filter((value) => value !== 'unknown');
+  const fallbackClassification =
+    classificationPool[index % Math.max(classificationPool.length, 1)] || 'unknown';
+  const classification =
+    sample?.classification && classificationPool.includes(sample.classification)
+      ? sample.classification
+      : fallbackClassification;
+  const author = sample?.author || formatAuthorText(book.author);
+  const year = sample?.year || new Date().getFullYear();
+  const summary = sample?.summary?.[localeKey] || sample?.summary?.en || '';
+  const coverUrl = createCoverDataUrl(book.title, author, sample?.colors);
+  return { author, classification, year, summary, coverUrl };
+}
+
 function refreshMetadata(collectionId, bookIds = []) {
   if (!collectionId) {
     return;
@@ -912,24 +1137,31 @@ function refreshMetadata(collectionId, bookIds = []) {
 
   const finalizeSuccess = () => {
     const stamp = new Date();
-    const stampEn = stamp.toLocaleString('en-US');
-    const stampZh = stamp.toLocaleString('zh-CN');
     if (controller.timeoutId) {
       clearTimeout(controller.timeoutId);
       controller.timeoutId = null;
     }
     targets.forEach((book) => {
-      book.enrichment = 'complete';
+      if (book.enrichment !== 'failed') {
+        book.enrichment = 'complete';
+      }
       book.metadataUpdatedAt = stamp.toISOString();
-      const base = book._originalSummary || getBookSummaryText(book);
-      book.summary = `${base} (Metadata refreshed ${stampEn}) （${stampZh} 已更新图书细节）`;
     });
     job.status = 'completed';
     job.progress = 100;
     job.scannedFiles = targets.length;
+    job.completedUpdates = job.completedUpdates || targets.length;
     job.updatedAt = new Date();
     updateJobOverlays(job);
-    state.activeMetadata = null;
+    if (state.activeMetadata && state.activeMetadata.jobId === job.id) {
+      state.activeMetadata.finished = true;
+      state.activeMetadata.visible = true;
+      state.activeMetadata.status = 'completed';
+      state.activeMetadata.progress = job.progress;
+      state.activeMetadata.completed = job.completedUpdates;
+      state.activeMetadata.totalBooks = targets.length;
+      state.activeMetadata.logs = Array.isArray(job.logs) ? job.logs.slice(-30) : [];
+    }
     renderApp();
     showToast(pack.collectionDetail.metadataUpdated);
     if (typeof job.onComplete === 'function') {
@@ -952,6 +1184,14 @@ function refreshMetadata(collectionId, bookIds = []) {
     job.status = 'cancelled';
     job.updatedAt = new Date();
     updateJobOverlays(job);
+    if (state.activeMetadata && state.activeMetadata.jobId === job.id) {
+      state.activeMetadata.finished = true;
+      state.activeMetadata.visible = true;
+      state.activeMetadata.status = 'cancelled';
+      state.activeMetadata.progress = job.progress;
+      state.activeMetadata.completed = job.completedUpdates || job.scannedFiles || 0;
+      state.activeMetadata.logs = Array.isArray(job.logs) ? job.logs.slice(-30) : [];
+    }
     renderApp();
   };
 
@@ -970,10 +1210,34 @@ function refreshMetadata(collectionId, bookIds = []) {
     }
     const book = targets[index];
     book.sizeMB = Number((book.sizeMB * (0.95 + Math.random() * 0.1)).toFixed(1));
+    const providerName = getAiProviderDisplayName(state.settings.aiProvider);
     pushMetadataLog(
       state.locale === 'zh'
-        ? `更新 ${book.title} 的元数据`
-        : `Updating metadata for ${book.title}`,
+        ? `正在通过 ${providerName} 更新《${book.title}》`
+        : `Refreshing ${book.title} via ${providerName}`,
+      job.id
+    );
+    const metadata = generateMetadataForBook(book, index);
+    book.author = metadata.author;
+    book.classification = metadata.classification;
+    book.publicationYear = metadata.year;
+    book.coverUrl = metadata.coverUrl;
+    const baseSummary = book._originalSummary || getBookSummaryText(book);
+    if (!book._originalSummary && baseSummary) {
+      book._originalSummary = baseSummary;
+    }
+    const summaryPieces = [metadata.summary, baseSummary].filter(Boolean);
+    const combinedSummary = summaryPieces.join('\n').trim();
+    book.summary = combinedSummary || baseSummary || metadata.summary;
+    book.enrichment = 'complete';
+    book.metadataUpdatedAt = new Date().toISOString();
+    job.completedUpdates = (job.completedUpdates || 0) + 1;
+    const classificationLabel = getClassificationLabel(book.classification || 'unknown');
+    const yearLabel = formatPublicationYearText(book.publicationYear);
+    pushMetadataLog(
+      state.locale === 'zh'
+        ? `《${book.title}》更新完成：作者 ${metadata.author}，分类 ${classificationLabel}，年份 ${yearLabel}，封面 ${metadata.coverUrl ? '已生成' : '暂无'}`
+        : `${book.title} updated: author ${metadata.author}, classification ${classificationLabel}, year ${yearLabel}, cover ${metadata.coverUrl ? 'updated' : 'pending'}.`,
       job.id
     );
     job.scannedFiles = index + 1;
@@ -1165,7 +1429,7 @@ function createBookFromFile(record, collectionId) {
   const title = normalizeTitleFromFile(rawName) || rawName || 'Untitled';
   const id = generateBookId(collectionId, filePath || rawName || title);
   const modified = typeof record?.modifiedAt === 'number' ? new Date(record.modifiedAt) : new Date();
-  const publicationYear = Number.isFinite(modified.getFullYear()) ? modified.getFullYear() : new Date().getFullYear();
+  const publicationYear = null;
   const sizeMBRaw = typeof record?.size === 'number' ? record.size / (1024 * 1024) : 0;
   const sizeMB = Number(Math.max(sizeMBRaw, 0.1).toFixed(1));
   const pages = Math.max(20, Math.round(sizeMB * 35));
@@ -1178,8 +1442,7 @@ function createBookFromFile(record, collectionId) {
     doc: 'TB472.1',
     docx: 'TB472.1'
   };
-  const fallbackClassification = classificationOptions?.[0] || Object.keys(classificationCatalog || {})[0] || 'TB472';
-  const classification = classificationMap[extension] || fallbackClassification;
+  const classification = 'unknown';
   const summary = `${title} · Imported from local filesystem · 本地文件导入`;
   const previewSource = extension ? extension.toUpperCase() : 'FILE';
   const preview = `Preview generated from ${previewSource} · 来自 ${previewSource} 文件的预览`;
@@ -1201,6 +1464,7 @@ function createBookFromFile(record, collectionId) {
     isbn: '',
     summary,
     preview,
+    coverUrl: null,
     bookmarks: [],
     tts: ttsFormats.has(extension),
     exportable: exportFormats.has(extension),
@@ -1341,7 +1605,8 @@ function createJob({ type, collectionId, label, onComplete, paths = [], totalFil
     milestones: [],
     files: [],
     manualProgress: !!manualProgress,
-    controller: null
+    controller: null,
+    completedUpdates: 0
   };
   state.jobs.unshift(job);
   updateJobOverlays(job);
@@ -1390,12 +1655,13 @@ function activateMetadataRefresh(job, options = {}) {
     collectionId: job.collectionId,
     collectionName: display,
     totalBooks: options.totalBooks || job.totalBookFiles || 0,
-    completed: job.scannedFiles || 0,
+    completed: job.completedUpdates || job.scannedFiles || 0,
     progress: job.progress || 0,
     status: job.status,
     logs: Array.isArray(job.logs) ? job.logs.slice(-30) : [],
     visible: true,
-    targetIds: Array.isArray(options.targetIds) ? [...options.targetIds] : []
+    targetIds: Array.isArray(options.targetIds) ? [...options.targetIds] : [],
+    finished: false
   };
   renderApp();
 }
@@ -1439,9 +1705,13 @@ function updateMetadataOverlay(job) {
   if (state.activeMetadata && state.activeMetadata.jobId === job.id) {
     state.activeMetadata.progress = job.progress;
     state.activeMetadata.status = job.status;
-    state.activeMetadata.completed = job.scannedFiles || 0;
+    state.activeMetadata.completed = job.completedUpdates || job.scannedFiles || 0;
     state.activeMetadata.totalBooks = job.totalBookFiles || state.activeMetadata.totalBooks || 0;
     state.activeMetadata.logs = Array.isArray(job.logs) ? job.logs.slice(-30) : [];
+    if (['completed', 'failed', 'cancelled'].includes(job.status)) {
+      state.activeMetadata.finished = true;
+      state.activeMetadata.visible = true;
+    }
   }
 }
 
@@ -1458,10 +1728,12 @@ function cancelMetadataRefresh() {
     return;
   }
   const job = state.jobs.find((entry) => entry.id === state.activeMetadata.jobId);
-  if (!job || job.status !== 'running' || job.type !== 'enrichment') {
-    state.activeMetadata.visible = false;
-    state.activeMetadata = null;
-    renderApp();
+  if (!job || job.type !== 'enrichment') {
+    closeMetadataOverlay();
+    return;
+  }
+  if (job.status !== 'running') {
+    closeMetadataOverlay();
     return;
   }
   if (job.controller) {
@@ -1487,6 +1759,22 @@ function cancelMetadataRefresh() {
   });
   pushMetadataLog(state.locale === 'zh' ? '元数据刷新已取消' : 'Metadata refresh cancelled', job.id);
   updateJobOverlays(job);
+  if (state.activeMetadata && state.activeMetadata.jobId === job.id) {
+    state.activeMetadata.finished = true;
+    state.activeMetadata.visible = true;
+    state.activeMetadata.status = 'cancelled';
+    state.activeMetadata.progress = job.progress;
+    state.activeMetadata.completed = job.completedUpdates || job.scannedFiles || 0;
+    state.activeMetadata.logs = Array.isArray(job.logs) ? job.logs.slice(-30) : [];
+  }
+  renderApp();
+}
+
+function closeMetadataOverlay() {
+  if (!state.activeMetadata) {
+    return;
+  }
+  state.activeMetadata.visible = false;
   state.activeMetadata = null;
   renderApp();
 }
@@ -2248,10 +2536,6 @@ function renderCollectionPage(pack) {
   if (detail) {
     page.appendChild(detail);
   }
-  const ai = renderAiPanel(pack);
-  if (ai) {
-    page.appendChild(ai);
-  }
   return page;
 }
 function renderFilters(collectionId, preferences, pack) {
@@ -2403,6 +2687,8 @@ function renderFilters(collectionId, preferences, pack) {
 }
 
 function applyBookFilters(books, preferences) {
+  const baselineYearFrom = 2000;
+  const baselineYearTo = new Date().getFullYear();
   return books
     .filter((book) => {
       const hasClassification = preferences.classification instanceof Set && preferences.classification.size > 0;
@@ -2412,10 +2698,16 @@ function applyBookFilters(books, preferences) {
       if (preferences.format !== 'all' && book.format !== preferences.format) {
         return false;
       }
-      if (preferences.yearFrom && book.publicationYear < preferences.yearFrom) {
+      const hasYear = Number.isFinite(book.publicationYear) && book.publicationYear > 0;
+      const yearFromActive = preferences.yearFrom && preferences.yearFrom !== baselineYearFrom;
+      const yearToActive = preferences.yearTo && preferences.yearTo !== baselineYearTo;
+      if (yearFromActive && hasYear && book.publicationYear < preferences.yearFrom) {
         return false;
       }
-      if (preferences.yearTo && book.publicationYear > preferences.yearTo) {
+      if (yearToActive && hasYear && book.publicationYear > preferences.yearTo) {
+        return false;
+      }
+      if ((yearFromActive || yearToActive) && !hasYear) {
         return false;
       }
       if (!preferences.search) {
@@ -2437,7 +2729,9 @@ function applyBookFilters(books, preferences) {
       } else if (column === 'author') {
         compare = a.author.localeCompare(b.author);
       } else if (column === 'year') {
-        compare = a.publicationYear - b.publicationYear;
+        const aYear = Number.isFinite(a.publicationYear) ? a.publicationYear : 0;
+        const bYear = Number.isFinite(b.publicationYear) ? b.publicationYear : 0;
+        compare = aYear - bYear;
       } else if (column === 'format') {
         compare = a.format.localeCompare(b.format);
       } else if (column === 'size') {
@@ -2467,10 +2761,10 @@ function renderCardView(books, preferences, pack) {
   }
   books.forEach((book) => {
     const card = createElement('article', { className: 'book-card' });
-    const placeholderText = state.locale === 'zh' ? '封面占位' : 'Cover placeholder';
-    card.appendChild(createElement('div', { className: 'image-placeholder small', text: placeholderText }));
+    card.appendChild(renderBookCover(book, 'small'));
     const header = createElement('div', { className: 'book-card-header' });
     const checkbox = createElement('input', {
+      className: 'styled-checkbox',
       attributes: { type: 'checkbox', 'aria-label': book.title }
     });
     checkbox.checked = preferences.selected.has(book.id);
@@ -2486,10 +2780,13 @@ function renderCardView(books, preferences, pack) {
     const emoji = getClassificationEmoji(book.classification);
     header.appendChild(createElement('h3', { text: `${emoji} ${book.title}` }));
     card.appendChild(header);
+    const authorText = formatAuthorText(book.author);
+    const classificationLabel = getClassificationLabel(book.classification || 'unknown');
+    const yearText = formatPublicationYearText(book.publicationYear);
     card.appendChild(
       createElement('p', {
         className: 'book-meta',
-        text: `${book.author} · ${getClassificationLabel(book.classification)} · ${book.publicationYear}`
+        text: `${authorText} · ${classificationLabel} · ${yearText}`
       })
     );
     card.appendChild(
@@ -2591,7 +2888,10 @@ function renderTableView(books, preferences, pack) {
   books.forEach((book) => {
     const row = createElement('tr');
     const checkboxCell = createElement('td');
-    const checkbox = createElement('input', { attributes: { type: 'checkbox', 'aria-label': book.title } });
+    const checkbox = createElement('input', {
+      className: 'styled-checkbox',
+      attributes: { type: 'checkbox', 'aria-label': book.title }
+    });
     checkbox.checked = preferences.selected.has(book.id);
     checkbox.addEventListener('change', (event) => {
       if (event.target.checked) {
@@ -2614,9 +2914,9 @@ function renderTableView(books, preferences, pack) {
     titleCell.appendChild(titleButton);
     row.appendChild(titleCell);
 
-    row.appendChild(createElement('td', { text: book.author }));
-    row.appendChild(createElement('td', { text: getClassificationLabel(book.classification) }));
-    row.appendChild(createElement('td', { text: `${book.publicationYear}` }));
+    row.appendChild(createElement('td', { text: formatAuthorText(book.author) }));
+    row.appendChild(createElement('td', { text: getClassificationLabel(book.classification || 'unknown') }));
+    row.appendChild(createElement('td', { text: formatPublicationYearText(book.publicationYear) }));
     row.appendChild(createElement('td', { text: getFormatLabel(book.format) }));
     row.appendChild(createElement('td', { text: formatSize(book.sizeMB) }));
     row.appendChild(createElement('td', { text: formatDate(book.dateAdded) }));
@@ -2666,7 +2966,7 @@ function renderPaginationControls(preferences, totalItems, pack) {
     preferences.page = totalPages;
   }
 
-  const sizeSelect = createElement('select');
+  const sizeSelect = createElement('select', { className: 'styled-select' });
   [10, 20, 50, 100, 200].forEach((value) => {
     const option = createElement('option', { text: `${value}` });
     option.value = value;
@@ -2807,6 +3107,7 @@ function renderCollectionDetail(pack) {
   const books = applyBookFilters(getBooks(collectionId), preferences);
   const startIndex = (preferences.page - 1) * preferences.pageSize;
   const paginated = books.slice(startIndex, startIndex + preferences.pageSize);
+  const heroBook = paginated[0] || books[0] || null;
   const currentYear = new Date().getFullYear();
 
   const activeFilters =
@@ -2916,6 +3217,7 @@ function renderCollectionDetail(pack) {
   chat.type = 'button';
   chat.addEventListener('click', () => {
     ensureAiSession(collectionId);
+    state.floatingAssistantOpen = true;
     renderApp();
   });
   actionRow.appendChild(rescan);
@@ -2924,8 +3226,7 @@ function renderCollectionDetail(pack) {
   info.appendChild(actionRow);
 
   const side = createElement('div', { className: 'collection-hero-side' });
-  const placeholderText = state.locale === 'zh' ? '封面' : 'Cover';
-  side.appendChild(createElement('div', { className: 'image-placeholder avatar', text: placeholderText }));
+  side.appendChild(renderBookCover(heroBook, 'avatar'));
   const filterToggle = createElement('button', {
     className: `filter-icon-button${preferences.filtersCollapsed ? ' collapsed' : ''}`,
     text: '🎛️'
@@ -3127,7 +3428,7 @@ function renderPreviewPage(pack) {
   titleGroup.appendChild(
     createElement('p', {
       className: 'preview-subtitle',
-      text: `${book.author} · ${getClassificationLabel(book.classification)} · ${book.publicationYear}`
+      text: `${formatAuthorText(book.author)} · ${getClassificationLabel(book.classification || 'unknown')} · ${formatPublicationYearText(book.publicationYear)}`
     })
   );
   const headerActions = createElement('div', { className: 'preview-header-actions' });
@@ -3148,6 +3449,7 @@ function renderPreviewPage(pack) {
   layout.appendChild(mainColumn);
 
   const sideColumn = createElement('aside', { className: 'preview-side' });
+  sideColumn.appendChild(renderBookCover(book, 'avatar'));
   sideColumn.appendChild(renderTtsPanel(pack, book));
   const metadataCard = createElement('div', { className: 'preview-metadata' });
   metadataCard.appendChild(createElement('h4', { text: pack.previewPanel.metadataTitle }));
@@ -3163,10 +3465,6 @@ function renderPreviewPage(pack) {
   layout.appendChild(sideColumn);
   page.appendChild(layout);
 
-  const aiPanel = renderAiPanel(pack);
-  if (aiPanel) {
-    page.appendChild(aiPanel);
-  }
   return page;
 }
 
@@ -3321,14 +3619,15 @@ function renderExportModal(pack) {
 function ensureAiSession(collectionId) {
   if (!state.aiSessions[collectionId]) {
     const display = getCollectionDisplay(collectionId);
+    const providerName = getAiProviderDisplayName(state.settings.aiProvider);
     state.aiSessions[collectionId] = {
       messages: [
         {
           role: 'assistant',
           content:
             state.locale === 'zh'
-              ? `欢迎来到「${display?.title || ''}」研究助手。我可以基于本地图书文本提供摘要、提问和引用。`
-              : `Welcome to the ${display?.title || ''} research assistant. Ask about themes, insights, or request citations.`,
+              ? `欢迎来到「${display?.title || ''}」研究助手，我将通过 ${providerName} 接口回答与本收藏集相关的问题。`
+              : `Welcome to the ${display?.title || ''} research assistant. Responses are powered by ${providerName} and grounded in this collection.`,
           citations: []
         }
       ],
@@ -3348,33 +3647,37 @@ function sendAiMessage(collectionId, prompt) {
   renderApp();
   setTimeout(() => {
     const books = getBooks(collectionId);
-    const cited = books[Math.floor(Math.random() * books.length)];
+    const cited = books.length ? books[Math.floor(Math.random() * books.length)] : null;
+    const classificationLabel = cited ? getClassificationLabel(cited.classification || 'unknown') : '';
     session.messages.push({
       role: 'assistant',
-      content:
-        state.locale === 'zh'
-          ? `根据《${cited.title}》的第 ${Math.ceil(Math.random() * cited.pages)} 页，建议关注其关于 ${getClassificationLabel(
-              cited.classification
-            )} 的讨论，以支持你的问题。`
-          : `Drawing on page ${Math.ceil(Math.random() * cited.pages)} of “${cited.title}”, consider the section on ${getClassificationLabel(
-              cited.classification
-            )} to deepen this line of inquiry.`,
-      citations: [{ bookId: cited.id, page: Math.ceil(Math.random() * cited.pages) }]
+      content: cited
+        ? state.locale === 'zh'
+          ? `根据《${cited.title}》的第 ${Math.ceil(Math.random() * cited.pages)} 页，建议关注其关于 ${classificationLabel} 的讨论，以支持你的问题。`
+          : `Drawing on page ${Math.ceil(Math.random() * cited.pages)} of “${cited.title}”, consider the section on ${classificationLabel} to deepen this line of inquiry.`
+        : state.locale === 'zh'
+        ? '索引中暂时没有可引用的图书，请完成扫描或刷新后再试。'
+        : 'No indexed books are available yet. Scan or refresh metadata before trying again.',
+      citations: cited ? [{ bookId: cited.id, page: Math.ceil(Math.random() * cited.pages) }] : []
     });
     session.loading = false;
     renderApp();
   }, 650);
 }
 
-function renderAiPanel(pack) {
-  const collectionId = state.selectedCollectionId;
+function renderAiConversationContent(pack, collectionId) {
   if (!collectionId) {
     return null;
   }
   const session = ensureAiSession(collectionId);
-  const container = createElement('section', { className: 'ai-panel' });
-  container.appendChild(createElement('h3', { text: pack.aiPanel.title }));
+  const container = createElement('div', { className: 'ai-conversation' });
   container.appendChild(createElement('p', { className: 'ai-notice', text: pack.aiPanel.groundingNotice }));
+  container.appendChild(
+    createElement('span', {
+      className: 'ai-provider-tag',
+      text: `${pack.aiPanel.providerLabel}: ${getAiProviderDisplayName(state.settings.aiProvider)}`
+    })
+  );
 
   const transcript = createElement('div', { className: 'ai-transcript' });
   session.messages.forEach((message) => {
@@ -3408,6 +3711,13 @@ function renderAiPanel(pack) {
   const input = createElement('textarea', {
     attributes: { placeholder: pack.aiPanel.placeholder, rows: 2 }
   });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendAiMessage(collectionId, input.value);
+      input.value = '';
+    }
+  });
   const sendButton = createElement('button', { text: pack.aiPanel.send });
   sendButton.type = 'button';
   sendButton.addEventListener('click', () => {
@@ -3428,6 +3738,61 @@ function renderAiPanel(pack) {
   container.appendChild(composer);
   container.appendChild(newChat);
   return container;
+}
+
+function renderFloatingAssistant(pack) {
+  const allowedPages = ['collection', 'preview'];
+  if (!state.selectedCollectionId || !allowedPages.includes(state.activePage)) {
+    if (state.floatingAssistantOpen) {
+      state.floatingAssistantOpen = false;
+    }
+    return null;
+  }
+  const collectionId = state.selectedCollectionId;
+  const classes = ['floating-assistant'];
+  if (state.floatingAssistantOpen) {
+    classes.push('open');
+  }
+  const wrapper = createElement('div', { className: classes.join(' ') });
+  const toggle = createElement('button', {
+    className: 'floating-assistant-toggle',
+    text: '🤖',
+    attributes: {
+      type: 'button',
+      'aria-label': state.floatingAssistantOpen ? pack.aiPanel.close : pack.aiPanel.toggleLabel
+    }
+  });
+  toggle.addEventListener('click', () => {
+    state.floatingAssistantOpen = !state.floatingAssistantOpen;
+    if (state.floatingAssistantOpen) {
+      ensureAiSession(collectionId);
+    }
+    renderApp();
+  });
+  wrapper.appendChild(toggle);
+  if (state.floatingAssistantOpen) {
+    ensureAiSession(collectionId);
+    const panel = createElement('div', { className: 'floating-assistant-panel' });
+    const header = createElement('div', { className: 'floating-assistant-header' });
+    header.appendChild(createElement('span', { className: 'floating-assistant-title', text: pack.aiPanel.title }));
+    const closeButton = createElement('button', {
+      className: 'floating-assistant-close',
+      text: '✕',
+      attributes: { type: 'button', 'aria-label': pack.aiPanel.close }
+    });
+    closeButton.addEventListener('click', () => {
+      state.floatingAssistantOpen = false;
+      renderApp();
+    });
+    header.appendChild(closeButton);
+    panel.appendChild(header);
+    const conversation = renderAiConversationContent(pack, collectionId);
+    if (conversation) {
+      panel.appendChild(conversation);
+    }
+    wrapper.appendChild(panel);
+  }
+  return wrapper;
 }
 function renderSettingsPage(pack) {
   const page = createElement('main', { className: 'page settings-page' });
@@ -3469,6 +3834,56 @@ function renderSettingsPage(pack) {
   metadataGroup.appendChild(rateLimit);
   metadataGroup.appendChild(createElement('label', { text: pack.settings.proxy }));
   metadataGroup.appendChild(proxy);
+
+  const aiHeading = createElement('h4', { className: 'settings-subheading', text: pack.settings.aiSectionTitle });
+  metadataGroup.appendChild(aiHeading);
+  const providerSelect = createElement('select', { className: 'styled-select' });
+  AI_PROVIDERS.forEach((provider) => {
+    const option = createElement('option', {
+      text: provider.label[getLocaleKey()] || provider.label.en || provider.key
+    });
+    option.value = provider.key;
+    if (state.settings.aiProvider === provider.key) {
+      option.selected = true;
+    }
+    providerSelect.appendChild(option);
+  });
+  providerSelect.addEventListener('change', (event) => {
+    state.settings.aiProvider = event.target.value;
+    if (state.selectedCollectionId) {
+      state.aiSessions[state.selectedCollectionId] = undefined;
+      ensureAiSession(state.selectedCollectionId);
+    }
+    renderApp();
+  });
+  const aiEndpoint = createElement('input', {
+    attributes: { type: 'text', value: state.settings.aiEndpoint, placeholder: 'https://api.openai.com/v1/chat/completions' }
+  });
+  aiEndpoint.addEventListener('change', (event) => {
+    state.settings.aiEndpoint = event.target.value;
+  });
+  const aiModel = createElement('input', {
+    attributes: { type: 'text', value: state.settings.aiModel, placeholder: 'gpt-4o-mini' }
+  });
+  aiModel.addEventListener('change', (event) => {
+    state.settings.aiModel = event.target.value;
+  });
+  const aiKey = createElement('input', {
+    attributes: { type: 'text', value: state.settings.aiApiKey, placeholder: pack.settings.aiApiKey }
+  });
+  aiKey.addEventListener('change', (event) => {
+    state.settings.aiApiKey = event.target.value;
+  });
+
+  metadataGroup.appendChild(createElement('label', { text: pack.settings.aiProvider }));
+  metadataGroup.appendChild(providerSelect);
+  metadataGroup.appendChild(createElement('label', { text: pack.settings.aiEndpoint }));
+  metadataGroup.appendChild(aiEndpoint);
+  metadataGroup.appendChild(createElement('label', { text: pack.settings.aiModel }));
+  metadataGroup.appendChild(aiModel);
+  metadataGroup.appendChild(createElement('label', { text: pack.settings.aiApiKey }));
+  metadataGroup.appendChild(aiKey);
+  metadataGroup.appendChild(createElement('p', { className: 'settings-helper', text: pack.settings.aiNote }));
 
   const storageGroup = createElement('div', { className: 'settings-group' });
   storageGroup.appendChild(createElement('h3', { text: pack.settings.tabs[1] }));
@@ -4041,6 +4456,16 @@ function renderMetadataOverlay(pack) {
   if (overlayPack.subtitle) {
     panel.appendChild(createElement('p', { className: 'wizard-helper', text: overlayPack.subtitle }));
   }
+  const providerName = getAiProviderDisplayName(state.settings.aiProvider);
+  panel.appendChild(
+    createElement('p', {
+      className: 'metadata-provider',
+      text:
+        state.locale === 'zh'
+          ? `调用模型：${providerName}`
+          : `Model provider: ${providerName}`
+    })
+  );
 
   const percent = Math.min(100, Math.round(state.activeMetadata.progress || 0));
   const statusKey = state.activeMetadata.status || 'queued';
@@ -4121,22 +4546,32 @@ function renderMetadataOverlay(pack) {
   panel.appendChild(logBox);
 
   const actions = createElement('div', { className: 'modal-actions' });
-  const backgroundButton = createElement('button', {
-    className: 'ghost-button',
-    text: overlayPack.buttons?.background || 'Run in background'
-  });
-  backgroundButton.type = 'button';
-  backgroundButton.addEventListener('click', backgroundMetadataRefresh);
-  const cancelButton = createElement('button', {
-    className: 'primary-button',
-    text: overlayPack.buttons?.cancel || 'Cancel run'
-  });
-  cancelButton.type = 'button';
-  const disabled = ['completed', 'cancelled'].includes(statusKey);
-  cancelButton.disabled = disabled;
-  cancelButton.addEventListener('click', cancelMetadataRefresh);
-  actions.appendChild(backgroundButton);
-  actions.appendChild(cancelButton);
+  const isFinished = state.activeMetadata?.finished || ['completed', 'failed', 'cancelled'].includes(statusKey);
+  if (isFinished) {
+    const closeButton = createElement('button', {
+      className: 'primary-button',
+      text: overlayPack.buttons?.close || 'Close'
+    });
+    closeButton.type = 'button';
+    closeButton.addEventListener('click', closeMetadataOverlay);
+    actions.appendChild(closeButton);
+  } else {
+    const backgroundButton = createElement('button', {
+      className: 'ghost-button',
+      text: overlayPack.buttons?.background || 'Run in background'
+    });
+    backgroundButton.type = 'button';
+    backgroundButton.addEventListener('click', backgroundMetadataRefresh);
+    const cancelButton = createElement('button', {
+      className: 'primary-button',
+      text: overlayPack.buttons?.cancel || 'Cancel run'
+    });
+    cancelButton.type = 'button';
+    cancelButton.disabled = statusKey !== 'running';
+    cancelButton.addEventListener('click', cancelMetadataRefresh);
+    actions.appendChild(backgroundButton);
+    actions.appendChild(cancelButton);
+  }
   panel.appendChild(actions);
   overlay.appendChild(panel);
   return overlay;
@@ -4479,6 +4914,10 @@ function renderApp() {
   const exportModal = renderExportModal(pack);
   if (exportModal) {
     root.appendChild(exportModal);
+  }
+  const floatingAssistant = renderFloatingAssistant(pack);
+  if (floatingAssistant) {
+    root.appendChild(floatingAssistant);
   }
   const toast = renderToast();
   if (toast) {
