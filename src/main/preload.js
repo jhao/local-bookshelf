@@ -18,5 +18,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   backupSystem(options) {
     return ipcRenderer.invoke('system:backup', options);
+  },
+  readDirectoryEntries(directoryPath) {
+    return ipcRenderer.invoke('fs:read-directory', { path: directoryPath });
   }
 });

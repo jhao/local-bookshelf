@@ -1,5 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
+
+const fsPromises = fs.promises;
 
 const {
   initializeDatabase,
@@ -128,5 +131,52 @@ ipcMain.handle('system:backup', async (event, options = {}) => {
   } catch (error) {
     console.error('Failed to back up database', error);
     return { success: false, message: error.message };
+  }
+});
+
+ipcMain.handle('fs:read-directory', async (_event, options = {}) => {
+  const directoryPath = options.path;
+  if (!directoryPath || typeof directoryPath !== 'string') {
+    return { path: directoryPath || null, exists: false, directories: [], files: [], error: 'Invalid path' };
+  }
+  try {
+    const stats = await fsPromises.stat(directoryPath);
+    if (!stats.isDirectory()) {
+      return { path: directoryPath, exists: false, directories: [], files: [], error: 'Not a directory' };
+    }
+  } catch (error) {
+    return { path: directoryPath, exists: false, directories: [], files: [], error: error.message };
+  }
+
+  try {
+    const entries = await fsPromises.readdir(directoryPath, { withFileTypes: true });
+    const directories = [];
+    const files = [];
+    for (const entry of entries) {
+      try {
+        const fullPath = path.join(directoryPath, entry.name);
+        if (entry.isDirectory()) {
+          directories.push({ path: fullPath, name: entry.name });
+          continue;
+        }
+        if (entry.isFile()) {
+          const fileStats = await fsPromises.stat(fullPath);
+          files.push({
+            path: fullPath,
+            name: entry.name,
+            size: fileStats.size,
+            modifiedAt: fileStats.mtimeMs,
+            extension: entry.name.includes('.') ? entry.name.split('.').pop().toLowerCase() : ''
+          });
+        }
+      } catch (error) {
+        // Skip problematic entries but continue scanning.
+        console.warn('Failed to inspect directory entry', error);
+      }
+    }
+
+    return { path: directoryPath, exists: true, directories, files };
+  } catch (error) {
+    return { path: directoryPath, exists: false, directories: [], files: [], error: error.message };
   }
 });
