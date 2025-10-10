@@ -163,6 +163,32 @@
         },
         "fallbackName": "collection"
       },
+      "metadataOverlay": {
+        "title": "Updating {name}",
+        "subtitle": "We are refreshing book details from the internet. Progress updates in real time and activity logs appear below.",
+        "progressLabel": "Progress",
+        "statusLabel": "Status",
+        "status": {
+          "queued": "Waiting to start",
+          "running": "Refreshing metadata…",
+          "completed": "Update complete",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
+        },
+        "metrics": {
+          "totalBooks": "Books selected",
+          "updatedBooks": "Books updated"
+        },
+        "logTitle": "Activity log",
+        "logs": {
+          "empty": "Waiting for updates to begin…"
+        },
+        "buttons": {
+          "background": "Run in background",
+          "cancel": "Cancel run"
+        },
+        "fallbackName": "collection"
+      },
       "monitor": {
         "title": "Background Jobs",
         "tableHeaders": [
@@ -181,7 +207,8 @@
           "queued": "Queued",
           "running": "Scanning",
           "completed": "Completed",
-          "failed": "Failed"
+          "failed": "Failed",
+          "cancelled": "Cancelled"
         },
         "logViewer": {
           "title": "Scan log · {job}",
@@ -232,7 +259,7 @@
         },
         "bulkActions": {
           "title": "Bulk actions",
-          "refreshMetadata": "Refresh metadata",
+          "refreshMetadata": "Update book details from the internet",
           "selectAll": "Select all",
           "clear": "Clear selection"
         },
@@ -253,9 +280,11 @@
           "Actions"
         ],
         "noResults": "No books match your current filters.",
+        "noBooksFound": "No supported book files were found.",
         "resumeReading": "Resume last session",
         "rescan": "Rescan folders",
-        "refresh": "Refresh metadata",
+        "confirmRescan": "Rescan the configured directories?",
+        "refresh": "Update book details from the internet",
         "openChat": "Open AI chat"
       },
       "previewPanel": {
@@ -511,6 +540,32 @@
         },
         "fallbackName": "收藏集"
       },
+      "metadataOverlay": {
+        "title": "正在更新 {name}",
+        "subtitle": "正在从互联网刷新图书细节信息，实时展示进度与日志。",
+        "progressLabel": "进度",
+        "statusLabel": "状态",
+        "status": {
+          "queued": "等待开始",
+          "running": "正在刷新元数据…",
+          "completed": "更新完成",
+          "failed": "失败",
+          "cancelled": "已取消"
+        },
+        "metrics": {
+          "totalBooks": "已选图书数量",
+          "updatedBooks": "已更新图书数量"
+        },
+        "logTitle": "活动日志",
+        "logs": {
+          "empty": "等待刷新任务启动…"
+        },
+        "buttons": {
+          "background": "后台运行",
+          "cancel": "取消运行"
+        },
+        "fallbackName": "收藏集"
+      },
       "monitor": {
         "title": "后台任务",
         "tableHeaders": [
@@ -529,7 +584,8 @@
           "queued": "排队中",
           "running": "扫描中",
           "completed": "已完成",
-          "failed": "失败"
+          "failed": "失败",
+          "cancelled": "已取消"
         },
         "logViewer": {
           "title": "扫描日志 · {job}",
@@ -580,7 +636,7 @@
         },
         "bulkActions": {
           "title": "批量操作",
-          "refreshMetadata": "刷新元数据",
+          "refreshMetadata": "从互联网更新图书细节信息",
           "selectAll": "全选",
           "clear": "清除"
         },
@@ -601,9 +657,11 @@
           "操作"
         ],
         "noResults": "没有符合当前筛选条件的图书。",
+        "noBooksFound": "未找到符合条件的图书文件。",
         "resumeReading": "继续上次阅读",
         "rescan": "重新扫描目录",
-        "refresh": "刷新元数据",
+        "confirmRescan": "确定要重新扫描目录吗？",
+        "refresh": "从互联网更新图书细节信息",
         "openChat": "打开 AI 对话"
       },
       "previewPanel": {

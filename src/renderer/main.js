@@ -243,6 +243,7 @@ const state = {
   toast: null,
   settings: { ...initialSettings },
   activeScan: null,
+  activeMetadata: null,
   directoryEditor: null,
   exportModal: null,
   jobLogViewer: null
@@ -620,6 +621,32 @@ function getEnrichmentLabel(key) {
   return labels[state.locale] || labels.en;
 }
 
+function getBookSummaryText(book) {
+  if (!book) {
+    return '';
+  }
+  if (typeof book.summary === 'string') {
+    return book.summary;
+  }
+  if (book.summary && typeof book.summary === 'object') {
+    return book.summary[state.locale] || book.summary.en || Object.values(book.summary)[0] || '';
+  }
+  return '';
+}
+
+function getBookPreviewText(book) {
+  if (!book) {
+    return '';
+  }
+  if (typeof book.preview === 'string') {
+    return book.preview;
+  }
+  if (book.preview && typeof book.preview === 'object') {
+    return book.preview[state.locale] || book.preview.en || Object.values(book.preview)[0] || '';
+  }
+  return '';
+}
+
 function deepCloneBooks(books) {
   return JSON.parse(JSON.stringify(books));
 }
@@ -833,13 +860,7 @@ function saveDirectoryEditor() {
       type: 'scan',
       collectionId,
       label: `${display?.title || collectionId} · Rescan`,
-      paths: raw,
-      onComplete: () => {
-        state.collectionMeta[collectionId] = state.collectionMeta[collectionId] || {};
-        state.collectionMeta[collectionId].lastScan = new Date().toISOString();
-        showToast(pack.collectionDetail.rescanCompleted);
-        renderApp();
-      }
+      paths: raw
     });
     activateScan(job, { collectionName: display?.title || collectionId, paths: raw });
   }
@@ -854,60 +875,116 @@ function refreshMetadata(collectionId, bookIds = []) {
   if (!targets.length) {
     return;
   }
+  const pack = getPack();
+  const display = getCollectionDisplay(collectionId);
   const startedAt = new Date();
   targets.forEach((book) => {
     book.enrichment = 'inprogress';
     book.metadataUpdatedAt = startedAt.toISOString();
+    if (!book._originalSummary) {
+      book._originalSummary = getBookSummaryText(book);
+    }
+    book.summary = `${book._originalSummary} (Metadata refreshing…) · 元数据检查中…`;
   });
   renderApp();
-  const pack = getPack();
-  const display = getCollectionDisplay(collectionId);
 
-  let index = 0;
-  const tickUpdate = () => {
+  const targetIds = targets.map((book) => book.id);
+  const job = createJob({
+    type: 'enrichment',
+    collectionId,
+    label: `${display?.title || collectionId} · ${pack.collectionDetail.refresh}`,
+    totalFiles: targets.length,
+    manualProgress: true
+  });
+  job.totalBookFiles = targets.length;
+  job.scannedFiles = 0;
+  job.logs = [];
+  const controller = { cancelled: false, timeoutId: null, finish: null };
+  job.controller = controller;
+  job.metadataTargets = targetIds;
+
+  activateMetadataRefresh(job, {
+    collectionName: display?.title || collectionId,
+    totalBooks: targets.length,
+    targetIds
+  });
+  pushMetadataLog(state.locale === 'zh' ? '开始刷新元数据' : 'Metadata refresh started', job.id);
+
+  const finalizeSuccess = () => {
+    const stamp = new Date();
+    const stampEn = stamp.toLocaleString('en-US');
+    const stampZh = stamp.toLocaleString('zh-CN');
+    if (controller.timeoutId) {
+      clearTimeout(controller.timeoutId);
+      controller.timeoutId = null;
+    }
+    targets.forEach((book) => {
+      book.enrichment = 'complete';
+      book.metadataUpdatedAt = stamp.toISOString();
+      const base = book._originalSummary || getBookSummaryText(book);
+      book.summary = `${base} (Metadata refreshed ${stampEn}) （${stampZh} 已更新图书细节）`;
+    });
+    job.status = 'completed';
+    job.progress = 100;
+    job.scannedFiles = targets.length;
+    job.updatedAt = new Date();
+    updateJobOverlays(job);
+    state.activeMetadata = null;
+    renderApp();
+    showToast(pack.collectionDetail.metadataUpdated);
+    if (typeof job.onComplete === 'function') {
+      job.onComplete(job);
+    }
+  };
+
+  const finalizeCancel = () => {
+    if (controller.timeoutId) {
+      clearTimeout(controller.timeoutId);
+      controller.timeoutId = null;
+    }
+    targets.forEach((book) => {
+      book.enrichment = 'queued';
+      book.metadataUpdatedAt = startedAt.toISOString();
+      if (book._originalSummary) {
+        book.summary = book._originalSummary;
+      }
+    });
+    job.status = 'cancelled';
+    job.updatedAt = new Date();
+    updateJobOverlays(job);
+    renderApp();
+  };
+
+  controller.finish = { success: finalizeSuccess, cancel: finalizeCancel };
+
+  const step = (index) => {
+    if (controller.cancelled || job.status !== 'running') {
+      if (controller.cancelled && controller.finish?.cancel) {
+        controller.finish.cancel();
+      }
+      return;
+    }
     if (index >= targets.length) {
+      finalizeSuccess();
       return;
     }
     const book = targets[index];
     book.sizeMB = Number((book.sizeMB * (0.95 + Math.random() * 0.1)).toFixed(1));
-    book.summary = `${book.summary.replace(/\s+$/, '')} ${
-      state.locale === 'zh' ? '（元数据检查中…）' : '(Metadata refreshing…)'
-    }`;
+    pushMetadataLog(
+      state.locale === 'zh'
+        ? `更新 ${book.title} 的元数据`
+        : `Updating metadata for ${book.title}`,
+      job.id
+    );
+    job.scannedFiles = index + 1;
+    job.progress = Math.round(((index + 1) / Math.max(targets.length, 1)) * 100);
+    job.updatedAt = new Date();
+    updateJobOverlays(job);
     renderApp();
-    index += 1;
-    setTimeout(tickUpdate, 400 + Math.random() * 300);
+    controller.timeoutId = setTimeout(() => step(index + 1), 420 + Math.random() * 300);
   };
-  tickUpdate();
 
-  createJob({
-    type: 'enrichment',
-    collectionId,
-    label: `${display?.title || collectionId} · Metadata refresh`,
-    onComplete: () => {
-      const stamp = new Date();
-      const stampText = stamp.toLocaleString(state.locale === 'zh' ? 'zh-CN' : 'en-US');
-      targets.forEach((book) => {
-        book.enrichment = 'complete';
-        book.metadataUpdatedAt = stamp.toISOString();
-        const interimRemoved = book.summary
-          .replace(/\s*\(Metadata refreshing…\)$/u, '')
-          .replace(/[（(]元数据检查中…[）)]?$/u, '')
-          .trim();
-        const cleaned = interimRemoved
-          .replace(/\s*\(Metadata refreshed .*\)$/u, '')
-          .replace(/\s*（.+?已刷新元数据）$/u, '')
-          .replace(/\s*（元数据检查中…）$/u, '')
-          .trim();
-        const note = state.locale === 'zh'
-          ? `（${stampText} 已刷新元数据）`
-          : `(Metadata refreshed ${stampText})`;
-        const separator = cleaned.length ? (state.locale === 'zh' ? '' : ' ') : '';
-        book.summary = `${cleaned}${separator}${note}`.trim();
-      });
-      showToast(pack.collectionDetail.metadataUpdated);
-      renderApp();
-    }
-  });
+  controller.timeoutId = setTimeout(() => step(0), 320);
 }
 
 function openExportModal(bookIds, collectionId = state.selectedCollectionId) {
@@ -1049,6 +1126,7 @@ function updateScanOverlay(job) {
     state.activeScan.status = job.status;
     state.activeScan.discoveredFiles = job.discoveredFiles || 0;
     state.activeScan.scannedFiles = job.scannedFiles || 0;
+    state.activeScan.totalFiles = job.totalFiles || job.totalBookFiles || 0;
     state.activeScan.totalBookFiles = job.totalBookFiles || 0;
     state.activeScan.files = Array.isArray(job.files) ? [...job.files] : [];
     state.activeScan.showFileList = keepListOpen && state.activeScan.files.length > 0;
@@ -1059,7 +1137,169 @@ function updateScanOverlay(job) {
   }
 }
 
-function createJob({ type, collectionId, label, onComplete, paths = [], totalFiles = null }) {
+function generateBookId(collectionId, filePath) {
+  const source = `${collectionId || ''}:${filePath || ''}`;
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = (hash * 31 + source.charCodeAt(index)) | 0;
+  }
+  return `book-${collectionId || 'collection'}-${Math.abs(hash)}`;
+}
+
+function normalizeTitleFromFile(name) {
+  if (!name) {
+    return '';
+  }
+  const base = name.replace(/\.[^.]+$/, '');
+  return base
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function createBookFromFile(record, collectionId) {
+  const filePath = record?.path || '';
+  const rawName = record?.name || (filePath ? filePath.split(/[\\/]/).pop() : '');
+  const extension = (record?.extension || getFileExtension(rawName || filePath || '')).toLowerCase();
+  const title = normalizeTitleFromFile(rawName) || rawName || 'Untitled';
+  const id = generateBookId(collectionId, filePath || rawName || title);
+  const modified = typeof record?.modifiedAt === 'number' ? new Date(record.modifiedAt) : new Date();
+  const publicationYear = Number.isFinite(modified.getFullYear()) ? modified.getFullYear() : new Date().getFullYear();
+  const sizeMBRaw = typeof record?.size === 'number' ? record.size / (1024 * 1024) : 0;
+  const sizeMB = Number(Math.max(sizeMBRaw, 0.1).toFixed(1));
+  const pages = Math.max(20, Math.round(sizeMB * 35));
+  const classificationMap = {
+    pdf: 'TB472',
+    epub: 'I2067',
+    mobi: 'I227',
+    azw3: 'I2067',
+    txt: 'F2',
+    doc: 'TB472.1',
+    docx: 'TB472.1'
+  };
+  const fallbackClassification = classificationOptions?.[0] || Object.keys(classificationCatalog || {})[0] || 'TB472';
+  const classification = classificationMap[extension] || fallbackClassification;
+  const summary = `${title} · Imported from local filesystem · 本地文件导入`;
+  const previewSource = extension ? extension.toUpperCase() : 'FILE';
+  const preview = `Preview generated from ${previewSource} · 来自 ${previewSource} 文件的预览`;
+  const ttsFormats = new Set(['pdf', 'epub', 'mobi', 'azw3', 'txt', 'doc', 'docx']);
+  const exportFormats = new Set(['pdf', 'epub']);
+
+  return {
+    id,
+    title,
+    author: 'Unknown Author · 未知作者',
+    classification,
+    publicationYear,
+    format: extension || 'pdf',
+    sizeMB,
+    dateAdded: new Date().toISOString(),
+    enrichment: 'queued',
+    pages,
+    progress: { currentPage: 1 },
+    isbn: '',
+    summary,
+    preview,
+    bookmarks: [],
+    tts: ttsFormats.has(extension),
+    exportable: exportFormats.has(extension),
+    metadataUpdatedAt: modified.toISOString(),
+    path: filePath,
+    _originalSummary: summary
+  };
+}
+
+function updateCollectionStats(collectionId) {
+  const books = getBooks(collectionId) || [];
+  const totalSize = books.reduce((sum, book) => sum + (Number(book.sizeMB) || 0), 0);
+  const roundedSize = Number(totalSize.toFixed(1));
+  const count = books.length;
+  const sizeText = roundedSize >= 1024 ? `${(roundedSize / 1024).toFixed(1)} GB` : `${roundedSize.toFixed(1)} MB`;
+  const stats = {
+    en: `${count} ${count === 1 ? 'book' : 'books'} · ${sizeText}`,
+    zh: `${count} 本 · ${sizeText}`
+  };
+  const meta = state.collectionMeta[collectionId] || {};
+  meta.bookCount = count;
+  meta.totalSizeMB = roundedSize;
+  state.collectionMeta[collectionId] = meta;
+  const userIndex = state.userCollections.findIndex((item) => item.id === collectionId);
+  if (userIndex !== -1) {
+    state.userCollections[userIndex] = {
+      ...state.userCollections[userIndex],
+      stats
+    };
+  } else {
+    const overrides = state.collectionOverrides[collectionId] || {};
+    overrides.stats = stats;
+    state.collectionOverrides[collectionId] = overrides;
+  }
+  return stats;
+}
+
+function applyScanResults(job) {
+  if (!job || job.type !== 'scan' || !job.collectionId) {
+    return;
+  }
+  const collectionId = job.collectionId;
+  const books = (Array.isArray(job.files) ? job.files : []).map((file) => createBookFromFile(file, collectionId));
+  state.collectionBooks[collectionId] = books;
+
+  const meta = state.collectionMeta[collectionId] || {};
+  meta.lastScan = new Date().toISOString();
+  meta.totalFiles = typeof job.totalFiles === 'number' ? job.totalFiles : books.length;
+  meta.bookCount = books.length;
+  meta.totalSizeMB = Number(books.reduce((sum, book) => sum + (Number(book.sizeMB) || 0), 0).toFixed(1));
+  state.collectionMeta[collectionId] = meta;
+
+  updateCollectionStats(collectionId);
+
+  books.forEach((book) => {
+    if (!state.previewStates[book.id]) {
+      state.previewStates[book.id] = { page: 1, zoom: 1, fit: 'width', fullscreen: false };
+    }
+    if (!state.bookmarks[book.id]) {
+      state.bookmarks[book.id] = new Set();
+    }
+    if (!book._originalSummary) {
+      book._originalSummary = getBookSummaryText(book);
+    }
+  });
+
+  Object.keys(state.bookmarks).forEach((bookId) => {
+    if (!books.some((book) => book.id === bookId)) {
+      delete state.bookmarks[bookId];
+    }
+  });
+
+  const preference = ensurePreferences(collectionId);
+  preference.selected = new Set();
+  preference.page = 1;
+
+  if (state.selectedCollectionId === collectionId) {
+    const current = books.find((book) => book.id === state.selectedBookId);
+    if (!current) {
+      state.selectedBookId = books[0]?.id || null;
+      if (!state.selectedBookId && state.activePage === 'preview') {
+        state.activePage = 'collection';
+      }
+    }
+  }
+
+  const pack = getPack();
+  const toastMessage = books.length
+    ? pack.collectionDetail.rescanCompleted
+    : pack.collectionDetail.noBooksFound || (state.locale === 'zh' ? '未找到符合条件的图书文件' : 'No supported book files were found');
+  showToast(toastMessage);
+}
+
+function updateJobOverlays(job) {
+  updateScanOverlay(job);
+  updateMetadataOverlay(job);
+}
+
+function createJob({ type, collectionId, label, onComplete, paths = [], totalFiles = null, manualProgress = false }) {
   let jobPaths = Array.isArray(paths) ? [...paths] : [];
   if (type === 'scan' && !jobPaths.length && collectionId) {
     const overridePaths = state.collectionOverrides[collectionId]?.paths || [];
@@ -1072,12 +1312,17 @@ function createJob({ type, collectionId, label, onComplete, paths = [], totalFil
     });
   }
   const books = type === 'scan' && collectionId ? getBooks(collectionId) : [];
-  const totalBookFiles =
-    typeof totalFiles === 'number' && totalFiles >= 0
-      ? totalFiles
-      : type === 'scan' && Array.isArray(books)
-      ? books.length
-      : 0;
+  const estimatedTotal = typeof totalFiles === 'number' && totalFiles >= 0 ? totalFiles : null;
+  const initialCount =
+    type === 'scan'
+      ? estimatedTotal !== null
+        ? estimatedTotal
+        : Array.isArray(books)
+          ? books.length
+          : 0
+      : estimatedTotal !== null
+        ? estimatedTotal
+        : 0;
   const job = {
     id: `job-${Date.now()}-${jobCounter++}`,
     type,
@@ -1091,12 +1336,15 @@ function createJob({ type, collectionId, label, onComplete, paths = [], totalFil
     logs: [],
     discoveredFiles: 0,
     scannedFiles: 0,
-    totalBookFiles,
+    totalFiles: type === 'scan' ? initialCount : estimatedTotal !== null ? estimatedTotal : 0,
+    totalBookFiles: initialCount,
     milestones: [],
-    files: []
+    files: [],
+    manualProgress: !!manualProgress,
+    controller: null
   };
   state.jobs.unshift(job);
-  updateScanOverlay(job);
+  updateJobOverlays(job);
   renderApp();
   setTimeout(() => startJob(job), 300);
   return job;
@@ -1122,10 +1370,125 @@ function activateScan(job, options = {}) {
     milestones: job.milestones,
     discoveredFiles: job.discoveredFiles,
     scannedFiles: job.scannedFiles,
+    totalFiles: job.totalFiles || job.totalBookFiles,
     totalBookFiles: job.totalBookFiles,
     files: Array.isArray(job.files) ? [...job.files] : [],
     showFileList: false
   };
+}
+
+function activateMetadataRefresh(job, options = {}) {
+  if (!job || job.type !== 'enrichment') {
+    return;
+  }
+  const display =
+    options.collectionName ||
+    getCollectionDisplay(job.collectionId)?.title ||
+    job.label || '';
+  state.activeMetadata = {
+    jobId: job.id,
+    collectionId: job.collectionId,
+    collectionName: display,
+    totalBooks: options.totalBooks || job.totalBookFiles || 0,
+    completed: job.scannedFiles || 0,
+    progress: job.progress || 0,
+    status: job.status,
+    logs: Array.isArray(job.logs) ? job.logs.slice(-30) : [],
+    visible: true,
+    targetIds: Array.isArray(options.targetIds) ? [...options.targetIds] : []
+  };
+  renderApp();
+}
+
+function pushMetadataLog(message, jobId = state.activeMetadata?.jobId) {
+  if (!message || !jobId) {
+    return;
+  }
+  const locale = state.locale === 'zh' ? 'zh-CN' : 'en-US';
+  const timestamp = new Date().toLocaleTimeString(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+  const entry = `${timestamp} · ${message}`;
+  const job = state.jobs.find((item) => item.id === jobId);
+  if (job) {
+    if (!Array.isArray(job.logs)) {
+      job.logs = [];
+    }
+    job.logs.push(entry);
+    if (job.logs.length > 120) {
+      job.logs = job.logs.slice(-120);
+    }
+  }
+  if (state.activeMetadata && state.activeMetadata.jobId === jobId) {
+    if (!Array.isArray(state.activeMetadata.logs)) {
+      state.activeMetadata.logs = [];
+    }
+    state.activeMetadata.logs.push(entry);
+    if (state.activeMetadata.logs.length > 30) {
+      state.activeMetadata.logs = state.activeMetadata.logs.slice(-30);
+    }
+  }
+}
+
+function updateMetadataOverlay(job) {
+  if (!job || job.type !== 'enrichment') {
+    return;
+  }
+  if (state.activeMetadata && state.activeMetadata.jobId === job.id) {
+    state.activeMetadata.progress = job.progress;
+    state.activeMetadata.status = job.status;
+    state.activeMetadata.completed = job.scannedFiles || 0;
+    state.activeMetadata.totalBooks = job.totalBookFiles || state.activeMetadata.totalBooks || 0;
+    state.activeMetadata.logs = Array.isArray(job.logs) ? job.logs.slice(-30) : [];
+  }
+}
+
+function backgroundMetadataRefresh() {
+  if (!state.activeMetadata) {
+    return;
+  }
+  state.activeMetadata.visible = false;
+  renderApp();
+}
+
+function cancelMetadataRefresh() {
+  if (!state.activeMetadata) {
+    return;
+  }
+  const job = state.jobs.find((entry) => entry.id === state.activeMetadata.jobId);
+  if (!job || job.status !== 'running' || job.type !== 'enrichment') {
+    state.activeMetadata.visible = false;
+    state.activeMetadata = null;
+    renderApp();
+    return;
+  }
+  if (job.controller) {
+    job.controller.cancelled = true;
+    if (job.controller.timeoutId) {
+      clearTimeout(job.controller.timeoutId);
+      job.controller.timeoutId = null;
+    }
+  }
+  job.status = 'cancelled';
+  job.progress = Math.min(job.progress, 100);
+  job.updatedAt = new Date();
+  const targetIds = Array.isArray(state.activeMetadata.targetIds) ? state.activeMetadata.targetIds : [];
+  targetIds.forEach((bookId) => {
+    const book = findBookById(bookId);
+    if (!book) {
+      return;
+    }
+    book.enrichment = 'queued';
+    if (book._originalSummary) {
+      book.summary = book._originalSummary;
+    }
+  });
+  pushMetadataLog(state.locale === 'zh' ? '元数据刷新已取消' : 'Metadata refresh cancelled', job.id);
+  updateJobOverlays(job);
+  state.activeMetadata = null;
+  renderApp();
 }
 
 function openJobLog(jobId) {
@@ -1156,10 +1519,13 @@ function startJob(job) {
   }
   job.status = 'running';
   job.updatedAt = new Date();
-  updateScanOverlay(job);
+  updateJobOverlays(job);
   renderApp();
   if (job.type === 'scan') {
     runScanJob(job);
+    return;
+  }
+  if (job.manualProgress) {
     return;
   }
   advanceJob(job);
@@ -1172,11 +1538,14 @@ function advanceJob(job) {
   if (job.type === 'scan') {
     return;
   }
+  if (job.manualProgress) {
+    return;
+  }
   if (job.progress >= 100) {
     job.progress = 100;
     job.status = 'completed';
     job.updatedAt = new Date();
-    updateScanOverlay(job);
+    updateJobOverlays(job);
     renderApp();
     if (typeof job.onComplete === 'function') {
       job.onComplete();
@@ -1186,7 +1555,7 @@ function advanceJob(job) {
   const increment = Math.min(100 - job.progress, Math.round(Math.random() * 15) + 10);
   job.progress += increment;
   job.updatedAt = new Date();
-  updateScanOverlay(job);
+  updateJobOverlays(job);
   renderApp();
   setTimeout(() => advanceJob(job), 600 + Math.random() * 400);
 }
@@ -1196,15 +1565,161 @@ async function runScanJob(job) {
     return;
   }
 
+  if (!window.api?.enumerateFiles) {
+    await runFallbackScanJob(job);
+    return;
+  }
+
+  const log = (messageZh, messageEn) => {
+    pushScanLog(state.locale === 'zh' ? messageZh : messageEn, job.id);
+  };
+
+  const paths = Array.isArray(job.paths) ? job.paths.filter(Boolean) : [];
+  if (!paths.length) {
+    job.discoveredFiles = 0;
+    job.totalFiles = 0;
+    job.files = [];
+    job.totalBookFiles = 0;
+    job.scannedFiles = 0;
+    job.progress = 100;
+    job.status = 'completed';
+    job.updatedAt = new Date();
+    updateJobOverlays(job);
+    applyScanResults(job);
+    renderApp();
+    if (typeof job.onComplete === 'function') {
+      job.onComplete(job);
+    }
+    return;
+  }
+
+  const allEntries = [];
+  const seenPaths = new Set();
+  let totalDiscovered = 0;
+
+  for (const targetPath of paths) {
+    log(`统计目录文件：${targetPath}`, `Counting files in ${targetPath}`);
+    let enumeration = null;
+    try {
+      enumeration = await window.api.enumerateFiles(targetPath);
+    } catch (error) {
+      console.error('Failed to enumerate directory', targetPath, error);
+      log(`无法统计目录：${targetPath}`, `Unable to inspect ${targetPath}`);
+      continue;
+    }
+    if (!enumeration || enumeration.exists === false || enumeration.error) {
+      const reason = enumeration?.error ? ` · ${enumeration.error}` : '';
+      log(`目录不可访问：${targetPath}${reason}`, `Directory unavailable: ${targetPath}${reason}`);
+      continue;
+    }
+    const files = Array.isArray(enumeration.files) ? enumeration.files : [];
+    totalDiscovered += enumeration.totalFiles || files.length;
+    files.forEach((file) => {
+      if (!file || !file.path || seenPaths.has(file.path)) {
+        return;
+      }
+      seenPaths.add(file.path);
+      allEntries.push(file);
+    });
+  }
+
+  job.discoveredFiles = 0;
+  job.totalFiles = totalDiscovered || allEntries.length;
+  job.files = [];
+  job.totalBookFiles = 0;
+  job.scannedFiles = 0;
+  job.progress = 5;
+  job.updatedAt = new Date();
+  updateJobOverlays(job);
+  renderApp();
+
+  if (!allEntries.length) {
+    log('未发现文件', 'No files detected in the selected paths');
+    job.progress = 100;
+    job.status = 'completed';
+    job.updatedAt = new Date();
+    updateJobOverlays(job);
+    applyScanResults(job);
+    renderApp();
+    if (typeof job.onComplete === 'function') {
+      job.onComplete(job);
+    }
+    return;
+  }
+
+  const sortedEntries = allEntries.sort((a, b) => (a?.path || '').localeCompare(b?.path || ''));
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  for (let index = 0; index < sortedEntries.length && job.status === 'running'; index += 1) {
+    const entry = sortedEntries[index];
+    job.discoveredFiles += 1;
+    const extension = (entry?.extension || getFileExtension(entry?.name || entry?.path || '')).toLowerCase();
+    if (extension && supportedBookExtensions.has(extension)) {
+      job.files.push({
+        path: entry?.path || '',
+        name: entry?.name || (entry?.path ? entry.path.split(/[\\/]/).pop() : ''),
+        extension,
+        size: typeof entry?.size === 'number' ? entry.size : null,
+        modifiedAt: typeof entry?.modifiedAt === 'number' ? entry.modifiedAt : null
+      });
+    }
+    job.totalBookFiles = job.files.length;
+    const base = Math.max(job.totalFiles || sortedEntries.length, 1);
+    job.progress = Math.min(45, Math.round((job.discoveredFiles / base) * 45));
+    job.updatedAt = new Date();
+    updateJobOverlays(job);
+    renderApp();
+    await delay(20);
+  }
+
+  if (job.files.length) {
+    log(`匹配到 ${job.files.length} 个受支持的文件`, `Found ${job.files.length} supported files`);
+  } else {
+    log('未找到受支持的图书文件', 'No supported book files detected');
+  }
+
+  job.files.sort((a, b) => (a?.path || '').localeCompare(b?.path || ''));
+
+  const totalBooks = Math.max(job.files.length, 1);
+  for (let index = 0; index < job.files.length && job.status === 'running'; index += 1) {
+    job.scannedFiles = index + 1;
+    const progressSegment = Math.round(((index + 1) / totalBooks) * 55);
+    job.progress = Math.min(99, 45 + progressSegment);
+    job.updatedAt = new Date();
+    updateJobOverlays(job);
+    renderApp();
+    await delay(35);
+  }
+
+  job.totalFiles = job.totalFiles || job.discoveredFiles;
+  job.totalBookFiles = job.files.length;
+  job.scannedFiles = job.files.length;
+  job.progress = 100;
+  job.status = 'completed';
+  job.updatedAt = new Date();
+  updateJobOverlays(job);
+  applyScanResults(job);
+  renderApp();
+  if (typeof job.onComplete === 'function') {
+    job.onComplete(job);
+  }
+}
+
+async function runFallbackScanJob(job) {
+  if (!job || job.type !== 'scan') {
+    return;
+  }
+
   if (!window.api?.readDirectoryEntries) {
     console.warn('Filesystem scan API is unavailable. Completing scan without reading files.');
     job.progress = 100;
     job.status = 'completed';
     job.updatedAt = new Date();
-    updateScanOverlay(job);
+    updateJobOverlays(job);
+    applyScanResults(job);
     renderApp();
     if (typeof job.onComplete === 'function') {
-      job.onComplete();
+      job.onComplete(job);
     }
     return;
   }
@@ -1231,10 +1746,15 @@ async function runScanJob(job) {
     job.progress = 100;
     job.status = 'completed';
     job.updatedAt = new Date();
-    updateScanOverlay(job);
+    updateJobOverlays(job);
+    job.totalFiles = 0;
+    job.totalBookFiles = 0;
+    job.scannedFiles = 0;
+    job.files = [];
+    applyScanResults(job);
     renderApp();
     if (typeof job.onComplete === 'function') {
-      job.onComplete();
+      job.onComplete(job);
     }
     return;
   }
@@ -1318,7 +1838,7 @@ async function runScanJob(job) {
     const nextProgress = Math.round(completionRatio * 100);
     job.progress = Math.min(99, Math.max(job.progress, nextProgress));
     job.updatedAt = new Date();
-    updateScanOverlay(job);
+    updateJobOverlays(job);
     renderApp();
 
     await new Promise((resolve) => setTimeout(resolve, 80));
@@ -1327,21 +1847,15 @@ async function runScanJob(job) {
   job.progress = 100;
   job.status = 'completed';
   job.updatedAt = new Date();
-  updateScanOverlay(job);
+  job.totalFiles = job.discoveredFiles;
+  job.totalBookFiles = job.files.length;
+  job.scannedFiles = job.files.length;
+  updateJobOverlays(job);
+  applyScanResults(job);
   renderApp();
   if (typeof job.onComplete === 'function') {
-    job.onComplete();
+    job.onComplete(job);
   }
-}
-
-function generateBooksForNewCollection(collectionId, name) {
-  const base = deepCloneBooks(initialCollectionBooks.design);
-  return base.map((book, index) => ({
-    ...book,
-    id: `${collectionId}-book-${index + 1}`,
-    title: `${name} · ${book.title}`,
-    progress: { currentPage: Math.min(book.progress?.currentPage || 1, book.pages) }
-  }));
 }
 
 function openWizard(mode = 'create', targetId = null) {
@@ -1413,8 +1927,8 @@ function completeWizard() {
       names: { en: name, zh: name },
       descriptions: { en: description, zh: description },
       stats: {
-        en: '120 books · Initial scan pending',
-        zh: '120 本 · 等待首次扫描'
+        en: '0 books · Scan pending',
+        zh: '0 本 · 等待扫描'
       },
       actions: {
         en: ['Resume Reading', 'Open AI Chat', 'Rescan'],
@@ -1428,23 +1942,13 @@ function completeWizard() {
       pagination: state.settings.paginationDefault,
       aiEnabled: true
     };
-    state.collectionBooks[collectionId] = generateBooksForNewCollection(collectionId, name);
-    const firstBook = state.collectionBooks[collectionId][0];
-    if (firstBook) {
-      state.previewStates[firstBook.id] = {
-        page: firstBook.progress?.currentPage || 1,
-        zoom: 1,
-        fit: 'width',
-        fullscreen: false
-      };
-      state.bookmarks[firstBook.id] = new Set(firstBook.bookmarks || []);
-    }
+    state.collectionBooks[collectionId] = [];
     state.collectionOverrides[collectionId] = {
       names: { en: name, zh: name },
       descriptions: { en: description, zh: description },
       stats: {
-        en: '120 books · Initial scan pending',
-        zh: '120 本 · 等待首次扫描'
+        en: '0 books · Scan pending',
+        zh: '0 本 · 等待扫描'
       },
       coverName: state.wizardData.coverName,
       paths: [...state.wizardData.paths]
@@ -1453,15 +1957,7 @@ function completeWizard() {
     const job = createJob({
       type: 'scan',
       collectionId,
-      label: `${name} · Initial scan`,
-      onComplete: () => {
-        state.collectionOverrides[collectionId].stats = {
-          en: '120 books · Scan completed just now',
-          zh: '120 本 · 扫描刚刚完成'
-        };
-        state.collectionMeta[collectionId].lastScan = new Date().toISOString();
-        renderApp();
-      }
+      label: `${name} · Initial scan`
     });
     activateScan(job, { collectionName: name, paths: state.wizardData.paths });
     state.showWizard = false;
@@ -1488,11 +1984,7 @@ function completeWizard() {
       type: 'scan',
       collectionId: targetId,
       label: `${state.wizardData.name.trim()} · Rescan`,
-      paths: state.wizardData.paths,
-      onComplete: () => {
-        state.collectionMeta[targetId].lastScan = new Date().toISOString();
-        renderApp();
-      }
+      paths: state.wizardData.paths
     });
     activateScan(job, { collectionName: state.wizardData.name.trim(), paths: state.wizardData.paths });
     closeWizard();
@@ -1663,17 +2155,17 @@ function handleCollectionAction(collectionId, actionLabel) {
   if (rescanLabels.includes(normalized)) {
     const display = getCollectionDisplay(collectionId);
     const paths = state.collectionOverrides[collectionId]?.paths || state.collectionMeta[collectionId]?.directories || [];
+    const confirmText =
+      pack.collectionDetail.confirmRescan ||
+      (state.locale === 'zh' ? '确认要重新扫描目录？' : 'Rescan the configured directories?');
+    if (!window.confirm(confirmText)) {
+      return;
+    }
     const job = createJob({
       type: 'scan',
       collectionId,
       label: `${display?.title || collectionId} · Rescan`,
-      paths,
-      onComplete: () => {
-        state.collectionMeta[collectionId] = state.collectionMeta[collectionId] || {};
-        state.collectionMeta[collectionId].lastScan = new Date().toISOString();
-        showToast(state.locale === 'zh' ? '扫描已完成' : 'Scan completed');
-        renderApp();
-      }
+      paths
     });
     activateScan(job, { collectionName: display?.title || collectionId, paths });
   }
@@ -1930,10 +2422,11 @@ function applyBookFilters(books, preferences) {
         return true;
       }
       const value = preferences.search.trim().toLowerCase();
+      const summary = getBookSummaryText(book).toLowerCase();
       return (
         book.title.toLowerCase().includes(value) ||
         book.author.toLowerCase().includes(value) ||
-        (book.summary && book.summary.toLowerCase().includes(value))
+        summary.includes(value)
       );
     })
     .sort((a, b) => {
@@ -1999,7 +2492,9 @@ function renderCardView(books, preferences, pack) {
         text: `${book.author} · ${getClassificationLabel(book.classification)} · ${book.publicationYear}`
       })
     );
-    card.appendChild(createElement('p', { className: 'book-summary', text: book.summary }));
+    card.appendChild(
+      createElement('p', { className: 'book-summary', text: getBookSummaryText(book) })
+    );
     const progress = Math.round((book.progress?.currentPage || 1) / book.pages * 100);
     card.appendChild(
       createElement('div', {
@@ -2399,17 +2894,18 @@ function renderCollectionDetail(pack) {
   const rescan = createElement('button', { className: 'ghost-button', text: pack.collectionDetail.rescan });
   rescan.type = 'button';
   rescan.addEventListener('click', () => {
-    createJob({
+    const confirmText =
+      pack.collectionDetail.confirmRescan ||
+      (state.locale === 'zh' ? '确认要重新扫描目录？' : 'Rescan the configured directories?');
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+    const job = createJob({
       type: 'scan',
       collectionId,
-      label: `${display?.title || ''} · Rescan`,
-      onComplete: () => {
-        state.collectionMeta[collectionId] = state.collectionMeta[collectionId] || {};
-        state.collectionMeta[collectionId].lastScan = new Date().toISOString();
-        showToast(pack.collectionDetail.rescanCompleted);
-        renderApp();
-      }
+      label: `${display?.title || ''} · Rescan`
     });
+    activateScan(job, { collectionName: display?.title || '', paths: meta.directories || [] });
   });
   const refresh = createElement('button', { className: 'primary-button', text: pack.collectionDetail.refresh });
   refresh.type = 'button';
@@ -2515,7 +3011,9 @@ function renderCollectionDetail(pack) {
 function createPreviewSection(pack, book, previewState) {
   const panel = createElement('section', { className: 'preview-panel' });
   panel.appendChild(createElement('h3', { text: pack.previewPanel.title }));
-  panel.appendChild(createElement('p', { className: 'preview-summary', text: book.summary }));
+  panel.appendChild(
+    createElement('p', { className: 'preview-summary', text: getBookSummaryText(book) })
+  );
 
   const controls = createElement('div', { className: 'preview-controls' });
   const zoomOut = createElement('button', { text: pack.previewPanel.zoomOut });
@@ -2570,8 +3068,10 @@ function createPreviewSection(pack, book, previewState) {
   );
 
   const content = createElement('div', {
-    className: `preview-content fit-${previewState.fit}${state.ttsState.playing && state.ttsState.highlight ? ' tts-active' : ''}`,
-    text: book.preview
+    className: `preview-content fit-${previewState.fit}${
+      state.ttsState.playing && state.ttsState.highlight ? ' tts-active' : ''
+    }`,
+    text: getBookPreviewText(book)
   });
   content.style.transform = `scale(${previewState.zoom})`;
   panel.appendChild(content);
@@ -3525,6 +4025,123 @@ function renderWizardOverlay(pack) {
   return overlay;
 }
 
+function renderMetadataOverlay(pack) {
+  if (!state.activeMetadata || state.activeMetadata.visible === false) {
+    return null;
+  }
+  const overlayPack = pack.metadataOverlay;
+  if (!overlayPack) {
+    return null;
+  }
+  const overlay = createElement('div', { className: 'modal-overlay metadata-overlay' });
+  const panel = createElement('div', { className: 'modal-panel wizard scan-panel metadata-panel' });
+  const collectionName = state.activeMetadata.collectionName || overlayPack.fallbackName || '';
+  const titleTemplate = overlayPack.title || '{name}';
+  panel.appendChild(createElement('h3', { text: titleTemplate.replace('{name}', collectionName) }));
+  if (overlayPack.subtitle) {
+    panel.appendChild(createElement('p', { className: 'wizard-helper', text: overlayPack.subtitle }));
+  }
+
+  const percent = Math.min(100, Math.round(state.activeMetadata.progress || 0));
+  const statusKey = state.activeMetadata.status || 'queued';
+  const statusLabel = overlayPack.status?.[statusKey] || statusKey;
+
+  const statusRow = createElement('div', {
+    className: 'scan-status-row',
+    children: [
+      createElement('span', {
+        className: 'scan-progress-label',
+        text: `${overlayPack.progressLabel || 'Progress'} · ${percent}%`
+      }),
+      createElement('span', {
+        className: 'scan-status-label',
+        text: `${overlayPack.statusLabel || 'Status'} · ${statusLabel}`
+      })
+    ]
+  });
+  const progressWrapper = createElement('div', { className: 'scan-progress' });
+  progressWrapper.appendChild(statusRow);
+  const track = createElement('div', { className: 'scan-progress-track' });
+  const fill = createElement('div', { className: 'scan-progress-fill' });
+  fill.style.width = `${percent}%`;
+  track.appendChild(fill);
+  progressWrapper.appendChild(track);
+  panel.appendChild(progressWrapper);
+
+  const metrics = createElement('div', { className: 'scan-metrics' });
+  const numberLocale = state.locale === 'zh' ? 'zh-CN' : 'en-US';
+  metrics.appendChild(
+    createElement('div', {
+      className: 'scan-metric',
+      children: [
+        createElement('span', {
+          className: 'scan-metric-label',
+          text: overlayPack.metrics?.totalBooks || 'Books selected'
+        }),
+        createElement('strong', {
+          className: 'scan-metric-value',
+          text: (state.activeMetadata.totalBooks || 0).toLocaleString(numberLocale)
+        })
+      ]
+    })
+  );
+  metrics.appendChild(
+    createElement('div', {
+      className: 'scan-metric',
+      children: [
+        createElement('span', {
+          className: 'scan-metric-label',
+          text: overlayPack.metrics?.updatedBooks || 'Books updated'
+        }),
+        createElement('strong', {
+          className: 'scan-metric-value',
+          text: (state.activeMetadata.completed || 0).toLocaleString(numberLocale)
+        })
+      ]
+    })
+  );
+  panel.appendChild(metrics);
+
+  panel.appendChild(createElement('h4', { text: overlayPack.logTitle || 'Activity log' }));
+  const logBox = createElement('div', { className: 'scan-log' });
+  if (!Array.isArray(state.activeMetadata.logs) || !state.activeMetadata.logs.length) {
+    logBox.appendChild(
+      createElement('p', {
+        className: 'wizard-helper',
+        text: overlayPack.logs?.empty || (state.locale === 'zh' ? '等待刷新开始…' : 'Waiting for updates to begin…')
+      })
+    );
+  } else {
+    const list = createElement('ul');
+    state.activeMetadata.logs.forEach((entry) => {
+      list.appendChild(createElement('li', { text: entry }));
+    });
+    logBox.appendChild(list);
+  }
+  panel.appendChild(logBox);
+
+  const actions = createElement('div', { className: 'modal-actions' });
+  const backgroundButton = createElement('button', {
+    className: 'ghost-button',
+    text: overlayPack.buttons?.background || 'Run in background'
+  });
+  backgroundButton.type = 'button';
+  backgroundButton.addEventListener('click', backgroundMetadataRefresh);
+  const cancelButton = createElement('button', {
+    className: 'primary-button',
+    text: overlayPack.buttons?.cancel || 'Cancel run'
+  });
+  cancelButton.type = 'button';
+  const disabled = ['completed', 'cancelled'].includes(statusKey);
+  cancelButton.disabled = disabled;
+  cancelButton.addEventListener('click', cancelMetadataRefresh);
+  actions.appendChild(backgroundButton);
+  actions.appendChild(cancelButton);
+  panel.appendChild(actions);
+  overlay.appendChild(panel);
+  return overlay;
+}
+
 function renderScanOverlay(pack) {
   if (!state.activeScan) {
     return null;
@@ -3587,9 +4204,9 @@ function renderScanOverlay(pack) {
           }),
           createElement('strong', {
             className: 'scan-metric-value',
-            text: `${(state.activeScan.discoveredFiles || 0).toLocaleString(numberLocale)} / ${(state.activeScan.totalBookFiles || 0).toLocaleString(
-              numberLocale
-            )}`
+            text: `${(state.activeScan.discoveredFiles || 0).toLocaleString(numberLocale)} / ${(
+              state.activeScan.totalFiles || state.activeScan.totalBookFiles || 0
+            ).toLocaleString(numberLocale)}`
           })
         ]
       })
@@ -3744,9 +4361,9 @@ function renderJobLogOverlay(pack) {
           }),
           createElement('strong', {
             className: 'scan-metric-value',
-            text: `${(job.discoveredFiles || 0).toLocaleString(numberLocale)} / ${(job.totalBookFiles || 0).toLocaleString(
-              numberLocale
-            )}`
+            text: `${(job.discoveredFiles || 0).toLocaleString(numberLocale)} / ${(
+              job.totalFiles || job.totalBookFiles || 0
+            ).toLocaleString(numberLocale)}`
           })
         ]
       })
@@ -3850,6 +4467,10 @@ function renderApp() {
     if (scanOverlay) {
       root.appendChild(scanOverlay);
     }
+  }
+  const metadataOverlay = renderMetadataOverlay(pack);
+  if (metadataOverlay) {
+    root.appendChild(metadataOverlay);
   }
   const jobLogOverlay = renderJobLogOverlay(pack);
   if (jobLogOverlay) {
