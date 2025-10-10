@@ -813,6 +813,35 @@ body {
   background: #eff6ff;
 }
 
+.job-log-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: #2563eb;
+  cursor: pointer;
+  font-weight: 600;
+  text-align: left;
+}
+
+.job-log-link:hover,
+.job-log-link:focus {
+  text-decoration: underline;
+}
+
+.job-type-pill {
+  display: inline-flex;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #4338ca;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .table-sort {
   background: transparent;
   border: none;
@@ -1446,6 +1475,10 @@ body {
   max-width: 720px;
 }
 
+.job-log-panel {
+  max-width: 680px;
+}
+
 .scan-paths {
   display: flex;
   flex-direction: column;
@@ -1479,6 +1512,36 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.scan-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.scan-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #eef2ff;
+  min-width: 180px;
+}
+
+.scan-metric-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4f46e5;
+}
+
+.scan-metric-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1e293b;
 }
 
 .scan-status-row {
