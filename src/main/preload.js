@@ -21,5 +21,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   readDirectoryEntries(directoryPath) {
     return ipcRenderer.invoke('fs:read-directory', { path: directoryPath });
+  },
+  enumerateFiles(directoryPath) {
+    return ipcRenderer.invoke('fs:enumerate-files', { path: directoryPath });
   }
 });
