@@ -185,7 +185,8 @@
         },
         "buttons": {
           "background": "Run in background",
-          "cancel": "Cancel run"
+          "cancel": "Cancel run",
+          "close": "Close"
         },
         "fallbackName": "collection"
       },
@@ -341,7 +342,10 @@
         "send": "Send",
         "citationLabel": "Source",
         "newChat": "New session",
-        "groundingNotice": "Responses are grounded in locally indexed embeddings."
+        "groundingNotice": "Responses are grounded in locally indexed embeddings.",
+        "toggleLabel": "Open AI assistant",
+        "close": "Close assistant",
+        "providerLabel": "Provider"
       },
       "settings": {
         "title": "Preferences",
@@ -354,6 +358,12 @@
         "apiKey": "API key",
         "rateLimit": "Rate limit (req/min)",
         "proxy": "Proxy URL",
+        "aiSectionTitle": "AI assistant",
+        "aiProvider": "Model provider",
+        "aiEndpoint": "API endpoint",
+        "aiModel": "Preferred model",
+        "aiApiKey": "AI API key",
+        "aiNote": "Supports OpenAI, DeepSeek, Kimi, Doubao, Qwen, and local Ollama adapters.",
         "cachePath": "Cache directory",
         "previewPath": "Preview artifacts",
         "embeddingsPath": "Embeddings database",
@@ -562,7 +572,8 @@
         },
         "buttons": {
           "background": "后台运行",
-          "cancel": "取消运行"
+          "cancel": "取消运行",
+          "close": "关闭"
         },
         "fallbackName": "收藏集"
       },
@@ -718,7 +729,10 @@
         "send": "发送",
         "citationLabel": "引用来源",
         "newChat": "新会话",
-        "groundingNotice": "回答基于本地嵌入索引并附带引用。"
+        "groundingNotice": "回答基于本地嵌入索引并附带引用。",
+        "toggleLabel": "打开 AI 助手",
+        "close": "关闭助手",
+        "providerLabel": "模型提供方"
       },
       "settings": {
         "title": "偏好设置",
@@ -731,6 +745,12 @@
         "apiKey": "API 密钥",
         "rateLimit": "速率限制（次/分钟）",
         "proxy": "代理地址",
+        "aiSectionTitle": "AI 大模型接口",
+        "aiProvider": "服务提供方",
+        "aiEndpoint": "接口地址",
+        "aiModel": "首选模型",
+        "aiApiKey": "AI 接口密钥",
+        "aiNote": "支持 OpenAI、DeepSeek、Kimi、豆包、通义千问以及本地 Ollama 等形式的配置。",
         "cachePath": "封面缓存路径",
         "previewPath": "预览文件存储",
         "embeddingsPath": "向量数据库",
