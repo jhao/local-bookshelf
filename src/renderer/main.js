@@ -143,6 +143,13 @@ const collectionEmojiMap = bootstrapData.collectionEmojiMap || {};
 const classificationEmojiMap = bootstrapData.classificationEmojiMap || {};
 const enrichmentLabels = bootstrapData.enrichmentLabels || {};
 
+const defaultBookExtensions = ['pdf', 'epub', 'mobi', 'docx', 'txt', 'azw3'];
+const supportedBookExtensions = new Set(
+  (Object.keys(formatCatalog || {}).length ? Object.keys(formatCatalog) : defaultBookExtensions).map((key) =>
+    key.toLowerCase()
+  )
+);
+
 const classificationOptions =
   Array.isArray(bootstrapData.classificationOptions) && bootstrapData.classificationOptions.length
     ? bootstrapData.classificationOptions
@@ -1037,11 +1044,14 @@ function updateScanOverlay(job) {
   }
 
   if (state.activeScan && state.activeScan.jobId === job.id) {
+    const keepListOpen = !!state.activeScan.showFileList;
     state.activeScan.progress = job.progress;
     state.activeScan.status = job.status;
     state.activeScan.discoveredFiles = job.discoveredFiles || 0;
     state.activeScan.scannedFiles = job.scannedFiles || 0;
     state.activeScan.totalBookFiles = job.totalBookFiles || 0;
+    state.activeScan.files = Array.isArray(job.files) ? [...job.files] : [];
+    state.activeScan.showFileList = keepListOpen && state.activeScan.files.length > 0;
     if (Array.isArray(job.logs)) {
       state.activeScan.logs = job.logs.slice(-30);
     }
@@ -1082,89 +1092,14 @@ function createJob({ type, collectionId, label, onComplete, paths = [], totalFil
     discoveredFiles: 0,
     scannedFiles: 0,
     totalBookFiles,
-    milestones: []
+    milestones: [],
+    files: []
   };
   state.jobs.unshift(job);
-  if (type === 'scan') {
-    initializeScanSimulation(job);
-  }
   updateScanOverlay(job);
   renderApp();
   setTimeout(() => startJob(job), 300);
   return job;
-}
-
-function initializeScanSimulation(job) {
-  if (!job || job.type !== 'scan') {
-    return;
-  }
-  const fallbackRoot = job.collectionId ? `${job.collectionId}-source` : 'scan-source';
-  const basePaths = Array.isArray(job.paths) && job.paths.length ? job.paths : [fallbackRoot];
-  const queue = [];
-  basePaths.forEach((rawPath, index) => {
-    const normalized = (rawPath || `${fallbackRoot}-${index + 1}`).replace(/[\\/]+$/, '');
-    queue.push({ depth: 1, path: normalized });
-    let parent = normalized;
-    for (let depth = 2; depth <= 5; depth++) {
-      parent = `${normalized}/${depth === 2 ? 'Section' : depth === 3 ? 'Chapter' : depth === 4 ? 'Topic' : 'Detail'}-${
-        depth - 1
-      }`;
-      queue.push({ depth, path: parent });
-    }
-  });
-  const totalNodes = queue.length || 1;
-  const estimatedTotal =
-    job.totalBookFiles && job.totalBookFiles > 0
-      ? job.totalBookFiles
-      : Math.max(30, totalNodes * (4 + Math.round(Math.random() * 3)));
-  job.totalBookFiles = job.totalBookFiles && job.totalBookFiles > 0 ? job.totalBookFiles : estimatedTotal;
-  job.simulation = {
-    queue,
-    totalNodes,
-    discovered: 0,
-    scanned: 0,
-    estimatedTotal,
-    filesPerNode: Math.max(1, Math.floor(estimatedTotal / totalNodes))
-  };
-}
-
-function advanceScanSimulation(job, options = {}) {
-  if (!job || job.type !== 'scan') {
-    return;
-  }
-  if (!job.simulation) {
-    initializeScanSimulation(job);
-  }
-  const simulation = job.simulation;
-  if (!simulation) {
-    return;
-  }
-  const targetTotal = job.totalBookFiles || simulation.estimatedTotal || 0;
-  const batchSize = options.forceComplete
-    ? simulation.queue.length
-    : Math.max(1, Math.round((job.progress + 10) / 40));
-  for (let index = 0; index < batchSize && simulation.queue.length; index += 1) {
-    const entry = simulation.queue.shift();
-    const depthMessage =
-      state.locale === 'zh'
-        ? `扫描子目录 (第${entry.depth}级)：${entry.path}`
-        : `Scanning subdirectory (level ${entry.depth}): ${entry.path}`;
-    pushScanLog(depthMessage, job.id);
-    const base = simulation.filesPerNode + Math.round(Math.random() * 2);
-    simulation.discovered += base;
-    simulation.scanned += Math.max(1, base - 1);
-  }
-  if (options.forceComplete) {
-    simulation.discovered = Math.max(simulation.discovered, targetTotal);
-    simulation.scanned = Math.max(simulation.scanned, targetTotal);
-    simulation.queue = [];
-  }
-  job.discoveredFiles = Math.min(targetTotal, simulation.discovered);
-  job.scannedFiles = Math.min(job.discoveredFiles, simulation.scanned);
-  if (!simulation.queue.length && job.progress >= 100) {
-    job.discoveredFiles = targetTotal;
-    job.scannedFiles = targetTotal;
-  }
 }
 
 function activateScan(job, options = {}) {
@@ -1187,7 +1122,9 @@ function activateScan(job, options = {}) {
     milestones: job.milestones,
     discoveredFiles: job.discoveredFiles,
     scannedFiles: job.scannedFiles,
-    totalBookFiles: job.totalBookFiles
+    totalBookFiles: job.totalBookFiles,
+    files: Array.isArray(job.files) ? [...job.files] : [],
+    showFileList: false
   };
 }
 
@@ -1221,6 +1158,10 @@ function startJob(job) {
   job.updatedAt = new Date();
   updateScanOverlay(job);
   renderApp();
+  if (job.type === 'scan') {
+    runScanJob(job);
+    return;
+  }
   advanceJob(job);
 }
 
@@ -1228,11 +1169,11 @@ function advanceJob(job) {
   if (!job || job.status !== 'running') {
     return;
   }
+  if (job.type === 'scan') {
+    return;
+  }
   if (job.progress >= 100) {
     job.progress = 100;
-    if (job.type === 'scan') {
-      advanceScanSimulation(job, { forceComplete: true });
-    }
     job.status = 'completed';
     job.updatedAt = new Date();
     updateScanOverlay(job);
@@ -1244,13 +1185,153 @@ function advanceJob(job) {
   }
   const increment = Math.min(100 - job.progress, Math.round(Math.random() * 15) + 10);
   job.progress += increment;
-  if (job.type === 'scan') {
-    advanceScanSimulation(job);
-  }
   job.updatedAt = new Date();
   updateScanOverlay(job);
   renderApp();
   setTimeout(() => advanceJob(job), 600 + Math.random() * 400);
+}
+
+async function runScanJob(job) {
+  if (!job || job.type !== 'scan') {
+    return;
+  }
+
+  if (!window.api?.readDirectoryEntries) {
+    console.warn('Filesystem scan API is unavailable. Completing scan without reading files.');
+    job.progress = 100;
+    job.status = 'completed';
+    job.updatedAt = new Date();
+    updateScanOverlay(job);
+    renderApp();
+    if (typeof job.onComplete === 'function') {
+      job.onComplete();
+    }
+    return;
+  }
+
+  const queue = [];
+  const enqueued = new Set();
+  const visited = new Set();
+  const seenFiles = new Set();
+
+  (Array.isArray(job.files) ? job.files : []).forEach((file) => {
+    if (file?.path) {
+      seenFiles.add(file.path);
+    }
+  });
+
+  (Array.isArray(job.paths) ? job.paths : []).forEach((pathValue) => {
+    if (pathValue && !enqueued.has(pathValue)) {
+      queue.push(pathValue);
+      enqueued.add(pathValue);
+    }
+  });
+
+  if (!queue.length) {
+    job.progress = 100;
+    job.status = 'completed';
+    job.updatedAt = new Date();
+    updateScanOverlay(job);
+    renderApp();
+    if (typeof job.onComplete === 'function') {
+      job.onComplete();
+    }
+    return;
+  }
+
+  const log = (messageZh, messageEn) => {
+    pushScanLog(state.locale === 'zh' ? messageZh : messageEn, job.id);
+  };
+
+  let processedDirectories = 0;
+
+  while (queue.length && job.status === 'running') {
+    const current = queue.shift();
+    if (!current || visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    processedDirectories += 1;
+
+    log(`扫描目录：${current}`, `Scanning directory: ${current}`);
+
+    let result;
+    try {
+      result = await window.api.readDirectoryEntries(current);
+    } catch (error) {
+      console.error('Failed to read directory entries', error);
+      log(`无法读取目录：${current}`, `Unable to read directory: ${current}`);
+      continue;
+    }
+
+    if (!result || result.exists === false || result.error) {
+      const reason = result?.error ? ` · ${result.error}` : '';
+      log(`目录不可访问：${current}${reason}`, `Directory unavailable: ${current}${reason}`);
+      continue;
+    }
+
+    const childDirs = Array.isArray(result.directories) ? result.directories : [];
+    childDirs.forEach((entry) => {
+      const nextPath = entry?.path;
+      if (nextPath && !enqueued.has(nextPath)) {
+        queue.push(nextPath);
+        enqueued.add(nextPath);
+      }
+    });
+
+    const files = Array.isArray(result.files) ? result.files : [];
+    let matchedFiles = 0;
+    files.forEach((file) => {
+      job.discoveredFiles += 1;
+      const extension = (file?.extension || getFileExtension(file?.name || file?.path || '')).toLowerCase();
+      if (!extension || !supportedBookExtensions.has(extension)) {
+        return;
+      }
+      if (file?.path && seenFiles.has(file.path)) {
+        return;
+      }
+      const record = {
+        path: file?.path || '',
+        name: file?.name || (file?.path ? file.path.split(/[\\/]/).pop() : ''),
+        extension,
+        size: typeof file?.size === 'number' ? file.size : null
+      };
+      job.files.push(record);
+      if (record.path) {
+        seenFiles.add(record.path);
+      }
+      matchedFiles += 1;
+    });
+
+    job.scannedFiles = job.files.length;
+    job.totalBookFiles = job.files.length;
+
+    if (matchedFiles > 0) {
+      log(
+        `匹配到 ${matchedFiles} 个受支持的文件`,
+        `Found ${matchedFiles} supported file${matchedFiles > 1 ? 's' : ''}`
+      );
+    }
+
+    const denominator = processedDirectories + queue.length;
+    const completionRatio = denominator > 0 ? processedDirectories / denominator : 1;
+    const nextProgress = Math.round(completionRatio * 100);
+    job.progress = Math.min(99, Math.max(job.progress, nextProgress));
+    job.updatedAt = new Date();
+    updateScanOverlay(job);
+    renderApp();
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+  }
+
+  job.progress = 100;
+  job.status = 'completed';
+  job.updatedAt = new Date();
+  updateScanOverlay(job);
+  renderApp();
+  if (typeof job.onComplete === 'function') {
+    job.onComplete();
+  }
 }
 
 function generateBooksForNewCollection(collectionId, name) {
@@ -3491,6 +3572,7 @@ function renderScanOverlay(pack) {
   if (typeof state.activeScan.discoveredFiles === 'number') {
     const numberLocale = state.locale === 'zh' ? 'zh-CN' : 'en-US';
     const metrics = createElement('div', { className: 'scan-metrics' });
+    const hasFiles = Array.isArray(state.activeScan.files) && state.activeScan.files.length > 0;
     metrics.appendChild(
       createElement('div', {
         className: 'scan-metric',
@@ -3512,6 +3594,33 @@ function renderScanOverlay(pack) {
         ]
       })
     );
+    const scannedValueContainer = createElement('strong', { className: 'scan-metric-value' });
+    const scannedButton = createElement('button', {
+      className: 'scan-metric-button',
+      text: (state.activeScan.scannedFiles || 0).toLocaleString(numberLocale),
+      attributes: { type: 'button' }
+    });
+    scannedButton.setAttribute(
+      'title',
+      hasFiles
+        ? state.locale === 'zh'
+          ? '查看已扫描的文件名称'
+          : 'View scanned file names'
+        : state.locale === 'zh'
+        ? '暂无可展示的文件'
+        : 'No files available yet'
+    );
+    if (!hasFiles) {
+      scannedButton.disabled = true;
+    }
+    scannedButton.addEventListener('click', () => {
+      if (!Array.isArray(state.activeScan.files) || !state.activeScan.files.length) {
+        return;
+      }
+      state.activeScan.showFileList = !state.activeScan.showFileList;
+      renderApp();
+    });
+    scannedValueContainer.appendChild(scannedButton);
     metrics.appendChild(
       createElement('div', {
         className: 'scan-metric',
@@ -3520,14 +3629,23 @@ function renderScanOverlay(pack) {
             className: 'scan-metric-label',
             text: overlayPack.scannedLabel || pack.monitor?.scannedColumn || 'Files scanned'
           }),
-          createElement('strong', {
-            className: 'scan-metric-value',
-            text: (state.activeScan.scannedFiles || 0).toLocaleString(numberLocale)
-          })
+          scannedValueContainer
         ]
       })
     );
     panel.appendChild(metrics);
+    if (hasFiles && state.activeScan.showFileList) {
+      const fileListWrapper = createElement('div', { className: 'scan-file-list' });
+      const filesTitle = overlayPack.filesTitle || 'Scanned files';
+      fileListWrapper.appendChild(createElement('h4', { text: filesTitle }));
+      const fileList = createElement('ul');
+      state.activeScan.files.forEach((file) => {
+        const label = file?.path || file?.name || '';
+        fileList.appendChild(createElement('li', { text: label }));
+      });
+      fileListWrapper.appendChild(fileList);
+      panel.appendChild(fileListWrapper);
+    }
   }
 
   panel.appendChild(createElement('h4', { text: overlayPack.logTitle }));
@@ -3649,6 +3767,18 @@ function renderJobLogOverlay(pack) {
       })
     );
     panel.appendChild(metrics);
+    if (Array.isArray(job.files) && job.files.length) {
+      const fileListWrapper = createElement('div', { className: 'scan-file-list' });
+      const filesTitle = overlayPack.filesTitle || pack.scanOverlay?.filesTitle || 'Scanned files';
+      fileListWrapper.appendChild(createElement('h4', { text: filesTitle }));
+      const fileList = createElement('ul');
+      job.files.forEach((file) => {
+        const label = file?.path || file?.name || '';
+        fileList.appendChild(createElement('li', { text: label }));
+      });
+      fileListWrapper.appendChild(fileList);
+      panel.appendChild(fileListWrapper);
+    }
   }
 
   panel.appendChild(

@@ -134,7 +134,7 @@
       },
       "scanOverlay": {
         "title": "Scanning {name}",
-        "subtitle": "We are indexing your selected folders. Progress updates in real time.",
+        "subtitle": "We are indexing your selected folders. Progress updates in real time. Books are detected by extension: PDF, EPUB, MOBI, DOCX, TXT, AZW3.",
         "progressLabel": "Progress",
         "statusLabel": "Status",
         "status": {
@@ -144,6 +144,7 @@
         },
         "discoveryLabel": "Discovered / Book files",
         "scannedLabel": "Files scanned",
+        "filesTitle": "Scanned book files",
         "pathsTitle": "Folders being indexed",
         "logTitle": "Activity log",
         "logs": {
@@ -481,7 +482,7 @@
       },
       "scanOverlay": {
         "title": "正在扫描 {name}",
-        "subtitle": "系统正在索引所选文件夹，进度信息实时更新。",
+        "subtitle": "系统正在索引所选文件夹，进度信息实时更新。当前依据文件扩展名识别图书：PDF、EPUB、MOBI、DOCX、TXT、AZW3。",
         "progressLabel": "进度",
         "statusLabel": "状态",
         "status": {
@@ -491,6 +492,7 @@
         },
         "discoveryLabel": "已发现文件 / 图书文件",
         "scannedLabel": "已扫描文件数量",
+        "filesTitle": "已扫描的图书文件",
         "pathsTitle": "扫描中的文件夹",
         "logTitle": "活动日志",
         "logs": {
