@@ -237,7 +237,8 @@ const state = {
   settings: { ...initialSettings },
   activeScan: null,
   directoryEditor: null,
-  exportModal: null
+  exportModal: null,
+  jobLogViewer: null
 };
 
 let jobCounter = 0;
@@ -821,10 +822,11 @@ function saveDirectoryEditor() {
   renderApp();
   if (editor.rescan) {
     const display = getCollectionDisplay(collectionId);
-    createJob({
+    const job = createJob({
       type: 'scan',
       collectionId,
       label: `${display?.title || collectionId} · Rescan`,
+      paths: raw,
       onComplete: () => {
         state.collectionMeta[collectionId] = state.collectionMeta[collectionId] || {};
         state.collectionMeta[collectionId].lastScan = new Date().toISOString();
@@ -832,6 +834,7 @@ function saveDirectoryEditor() {
         renderApp();
       }
     });
+    activateScan(job, { collectionName: display?.title || collectionId, paths: raw });
   }
 }
 
@@ -959,8 +962,8 @@ function showToast(message) {
   }, 2800);
 }
 
-function pushScanLog(message) {
-  if (!state.activeScan || !message) {
+function pushScanLog(message, jobId = state.activeScan?.jobId) {
+  if (!message || !jobId) {
     return;
   }
   const locale = state.locale === 'zh' ? 'zh-CN' : 'en-US';
@@ -969,14 +972,27 @@ function pushScanLog(message) {
     minute: '2-digit',
     second: '2-digit'
   });
-  state.activeScan.logs.push(`${timestamp} · ${message}`);
-  if (state.activeScan.logs.length > 30) {
-    state.activeScan.logs = state.activeScan.logs.slice(-30);
+  const entry = `${timestamp} · ${message}`;
+  const job = state.jobs.find((item) => item.id === jobId);
+  if (job) {
+    if (!Array.isArray(job.logs)) {
+      job.logs = [];
+    }
+    job.logs.push(entry);
+    if (job.logs.length > 120) {
+      job.logs = job.logs.slice(-120);
+    }
+  }
+  if (state.activeScan && state.activeScan.jobId === jobId) {
+    state.activeScan.logs.push(entry);
+    if (state.activeScan.logs.length > 30) {
+      state.activeScan.logs = state.activeScan.logs.slice(-30);
+    }
   }
 }
 
 function updateScanOverlay(job) {
-  if (!state.activeScan || state.activeScan.jobId !== job?.id) {
+  if (!job || job.type !== 'scan') {
     return;
   }
   const pack = getPack();
@@ -984,14 +1000,15 @@ function updateScanOverlay(job) {
   if (!overlayPack) {
     return;
   }
-  state.activeScan.progress = job.progress;
-  state.activeScan.status = job.status;
-  const milestones = state.activeScan.milestones;
+  if (!Array.isArray(job.milestones)) {
+    job.milestones = [];
+  }
+  const milestones = job.milestones;
 
   const ensureMilestone = (key, message) => {
     if (!milestones.includes(key) && message) {
       milestones.push(key);
-      pushScanLog(message);
+      pushScanLog(message, job.id);
     }
   };
 
@@ -999,7 +1016,7 @@ function updateScanOverlay(job) {
     ensureMilestone('queued', overlayPack.logs.queued);
   }
   if (job.status === 'running') {
-    const firstPath = state.activeScan.paths?.[0] || overlayPack.logs.fallbackPath;
+    const firstPath = (job.paths && job.paths[0]) || overlayPack.logs.fallbackPath;
     ensureMilestone('running', overlayPack.logs.start.replace('{path}', firstPath));
   }
 
@@ -1018,9 +1035,39 @@ function updateScanOverlay(job) {
   if (job.status === 'completed') {
     ensureMilestone('completed', overlayPack.logs.completed);
   }
+
+  if (state.activeScan && state.activeScan.jobId === job.id) {
+    state.activeScan.progress = job.progress;
+    state.activeScan.status = job.status;
+    state.activeScan.discoveredFiles = job.discoveredFiles || 0;
+    state.activeScan.scannedFiles = job.scannedFiles || 0;
+    state.activeScan.totalBookFiles = job.totalBookFiles || 0;
+    if (Array.isArray(job.logs)) {
+      state.activeScan.logs = job.logs.slice(-30);
+    }
+    state.activeScan.milestones = job.milestones;
+  }
 }
 
-function createJob({ type, collectionId, label, onComplete }) {
+function createJob({ type, collectionId, label, onComplete, paths = [], totalFiles = null }) {
+  let jobPaths = Array.isArray(paths) ? [...paths] : [];
+  if (type === 'scan' && !jobPaths.length && collectionId) {
+    const overridePaths = state.collectionOverrides[collectionId]?.paths || [];
+    const metaPaths = state.collectionMeta[collectionId]?.directories || [];
+    jobPaths = [...overridePaths];
+    metaPaths.forEach((entry) => {
+      if (!jobPaths.includes(entry)) {
+        jobPaths.push(entry);
+      }
+    });
+  }
+  const books = type === 'scan' && collectionId ? getBooks(collectionId) : [];
+  const totalBookFiles =
+    typeof totalFiles === 'number' && totalFiles >= 0
+      ? totalFiles
+      : type === 'scan' && Array.isArray(books)
+      ? books.length
+      : 0;
   const job = {
     id: `job-${Date.now()}-${jobCounter++}`,
     type,
@@ -1029,13 +1076,141 @@ function createJob({ type, collectionId, label, onComplete }) {
     progress: 0,
     status: 'queued',
     updatedAt: new Date(),
-    onComplete
+    onComplete,
+    paths: jobPaths,
+    logs: [],
+    discoveredFiles: 0,
+    scannedFiles: 0,
+    totalBookFiles,
+    milestones: []
   };
   state.jobs.unshift(job);
+  if (type === 'scan') {
+    initializeScanSimulation(job);
+  }
   updateScanOverlay(job);
   renderApp();
   setTimeout(() => startJob(job), 300);
   return job;
+}
+
+function initializeScanSimulation(job) {
+  if (!job || job.type !== 'scan') {
+    return;
+  }
+  const fallbackRoot = job.collectionId ? `${job.collectionId}-source` : 'scan-source';
+  const basePaths = Array.isArray(job.paths) && job.paths.length ? job.paths : [fallbackRoot];
+  const queue = [];
+  basePaths.forEach((rawPath, index) => {
+    const normalized = (rawPath || `${fallbackRoot}-${index + 1}`).replace(/[\\/]+$/, '');
+    queue.push({ depth: 1, path: normalized });
+    let parent = normalized;
+    for (let depth = 2; depth <= 5; depth++) {
+      parent = `${normalized}/${depth === 2 ? 'Section' : depth === 3 ? 'Chapter' : depth === 4 ? 'Topic' : 'Detail'}-${
+        depth - 1
+      }`;
+      queue.push({ depth, path: parent });
+    }
+  });
+  const totalNodes = queue.length || 1;
+  const estimatedTotal =
+    job.totalBookFiles && job.totalBookFiles > 0
+      ? job.totalBookFiles
+      : Math.max(30, totalNodes * (4 + Math.round(Math.random() * 3)));
+  job.totalBookFiles = job.totalBookFiles && job.totalBookFiles > 0 ? job.totalBookFiles : estimatedTotal;
+  job.simulation = {
+    queue,
+    totalNodes,
+    discovered: 0,
+    scanned: 0,
+    estimatedTotal,
+    filesPerNode: Math.max(1, Math.floor(estimatedTotal / totalNodes))
+  };
+}
+
+function advanceScanSimulation(job, options = {}) {
+  if (!job || job.type !== 'scan') {
+    return;
+  }
+  if (!job.simulation) {
+    initializeScanSimulation(job);
+  }
+  const simulation = job.simulation;
+  if (!simulation) {
+    return;
+  }
+  const targetTotal = job.totalBookFiles || simulation.estimatedTotal || 0;
+  const batchSize = options.forceComplete
+    ? simulation.queue.length
+    : Math.max(1, Math.round((job.progress + 10) / 40));
+  for (let index = 0; index < batchSize && simulation.queue.length; index += 1) {
+    const entry = simulation.queue.shift();
+    const depthMessage =
+      state.locale === 'zh'
+        ? `扫描子目录 (第${entry.depth}级)：${entry.path}`
+        : `Scanning subdirectory (level ${entry.depth}): ${entry.path}`;
+    pushScanLog(depthMessage, job.id);
+    const base = simulation.filesPerNode + Math.round(Math.random() * 2);
+    simulation.discovered += base;
+    simulation.scanned += Math.max(1, base - 1);
+  }
+  if (options.forceComplete) {
+    simulation.discovered = Math.max(simulation.discovered, targetTotal);
+    simulation.scanned = Math.max(simulation.scanned, targetTotal);
+    simulation.queue = [];
+  }
+  job.discoveredFiles = Math.min(targetTotal, simulation.discovered);
+  job.scannedFiles = Math.min(job.discoveredFiles, simulation.scanned);
+  if (!simulation.queue.length && job.progress >= 100) {
+    job.discoveredFiles = targetTotal;
+    job.scannedFiles = targetTotal;
+  }
+}
+
+function activateScan(job, options = {}) {
+  if (!job || job.type !== 'scan') {
+    return;
+  }
+  const display =
+    options.collectionName ||
+    getCollectionDisplay(job.collectionId)?.title ||
+    (options.fallbackName || job.label || '');
+  const pathList = Array.isArray(options.paths) && options.paths.length ? options.paths : job.paths || [];
+  state.activeScan = {
+    jobId: job.id,
+    collectionId: job.collectionId,
+    collectionName: display,
+    paths: [...pathList],
+    progress: job.progress,
+    status: job.status,
+    logs: Array.isArray(job.logs) ? [...job.logs] : [],
+    milestones: job.milestones,
+    discoveredFiles: job.discoveredFiles,
+    scannedFiles: job.scannedFiles,
+    totalBookFiles: job.totalBookFiles
+  };
+}
+
+function openJobLog(jobId) {
+  if (!jobId) {
+    return;
+  }
+  const job = state.jobs.find((item) => item.id === jobId);
+  if (!job) {
+    state.jobLogViewer = null;
+    renderApp();
+    return;
+  }
+  state.jobLogViewer = jobId;
+  renderApp();
+}
+
+function closeJobLog() {
+  if (!state.jobLogViewer) {
+    return;
+  }
+  state.jobLogViewer = null;
+  renderApp();
 }
 
 function startJob(job) {
@@ -1055,6 +1230,9 @@ function advanceJob(job) {
   }
   if (job.progress >= 100) {
     job.progress = 100;
+    if (job.type === 'scan') {
+      advanceScanSimulation(job, { forceComplete: true });
+    }
     job.status = 'completed';
     job.updatedAt = new Date();
     updateScanOverlay(job);
@@ -1066,6 +1244,9 @@ function advanceJob(job) {
   }
   const increment = Math.min(100 - job.progress, Math.round(Math.random() * 15) + 10);
   job.progress += increment;
+  if (job.type === 'scan') {
+    advanceScanSimulation(job);
+  }
   job.updatedAt = new Date();
   updateScanOverlay(job);
   renderApp();
@@ -1201,16 +1382,7 @@ function completeWizard() {
         renderApp();
       }
     });
-    state.activeScan = {
-      jobId: job.id,
-      collectionId,
-      collectionName: name,
-      paths: [...state.wizardData.paths],
-      progress: 0,
-      status: 'queued',
-      logs: [],
-      milestones: []
-    };
+    activateScan(job, { collectionName: name, paths: state.wizardData.paths });
     state.showWizard = false;
     state.wizardErrors = [];
     state.wizardStep = 0;
@@ -1231,15 +1403,17 @@ function completeWizard() {
     state.collectionMeta[targetId] = state.collectionMeta[targetId] || {};
     state.collectionMeta[targetId].directories = [...state.wizardData.paths];
     showToast(pack.settings.saved);
-    createJob({
+    const job = createJob({
       type: 'scan',
       collectionId: targetId,
       label: `${state.wizardData.name.trim()} · Rescan`,
+      paths: state.wizardData.paths,
       onComplete: () => {
         state.collectionMeta[targetId].lastScan = new Date().toISOString();
         renderApp();
       }
     });
+    activateScan(job, { collectionName: state.wizardData.name.trim(), paths: state.wizardData.paths });
     closeWizard();
   }
 }
@@ -1407,10 +1581,12 @@ function handleCollectionAction(collectionId, actionLabel) {
   }
   if (rescanLabels.includes(normalized)) {
     const display = getCollectionDisplay(collectionId);
-    createJob({
+    const paths = state.collectionOverrides[collectionId]?.paths || state.collectionMeta[collectionId]?.directories || [];
+    const job = createJob({
       type: 'scan',
       collectionId,
       label: `${display?.title || collectionId} · Rescan`,
+      paths,
       onComplete: () => {
         state.collectionMeta[collectionId] = state.collectionMeta[collectionId] || {};
         state.collectionMeta[collectionId].lastScan = new Date().toISOString();
@@ -1418,6 +1594,7 @@ function handleCollectionAction(collectionId, actionLabel) {
         renderApp();
       }
     });
+    activateScan(job, { collectionName: display?.title || collectionId, paths });
   }
 }
 
@@ -2909,10 +3086,31 @@ function renderMonitorPage(pack) {
     thead.appendChild(headerRow);
     table.appendChild(thead);
     const tbody = createElement('tbody');
+    const numberLocale = state.locale === 'zh' ? 'zh-CN' : 'en-US';
     state.jobs.forEach((job) => {
       const row = createElement('tr');
-      row.appendChild(createElement('td', { text: getJobTypeLabel(job.type) }));
-      row.appendChild(createElement('td', { text: getCollectionDisplay(job.collectionId)?.title || '' }));
+      const jobCell = createElement('td');
+      const jobButton = createElement('button', {
+        className: 'job-log-link',
+        text: job.label || getJobTypeLabel(job.type)
+      });
+      jobButton.type = 'button';
+      jobButton.addEventListener('click', () => openJobLog(job.id));
+      jobCell.appendChild(jobButton);
+      jobCell.appendChild(createElement('span', { className: 'job-type-pill', text: getJobTypeLabel(job.type) }));
+      row.appendChild(jobCell);
+
+      const collectionTitle = getCollectionDisplay(job.collectionId)?.title || '';
+      row.appendChild(createElement('td', { text: collectionTitle || '—' }));
+
+      const discoveryValue =
+        job.type === 'scan'
+          ? `${(job.discoveredFiles || 0).toLocaleString(numberLocale)} / ${(job.totalBookFiles || 0).toLocaleString(
+              numberLocale
+            )}`
+          : '—';
+      row.appendChild(createElement('td', { text: discoveryValue }));
+
       const progressCell = createElement('td');
       progressCell.appendChild(
         createElement('div', {
@@ -2927,7 +3125,11 @@ function renderMonitorPage(pack) {
       );
       progressCell.appendChild(createElement('span', { text: `${job.progress}%` }));
       row.appendChild(progressCell);
-      row.appendChild(createElement('td', { text: pack.monitor.statuses[job.status] || job.status }));
+      const scannedValue =
+        job.type === 'scan' ? (job.scannedFiles || 0).toLocaleString(numberLocale) : '—';
+      row.appendChild(createElement('td', { text: scannedValue }));
+      const statusText = pack.monitor.statuses[job.status] || job.status;
+      row.appendChild(createElement('td', { text: statusText }));
       row.appendChild(createElement('td', { text: formatDate(job.updatedAt) }));
       tbody.appendChild(row);
     });
@@ -3286,6 +3488,48 @@ function renderScanOverlay(pack) {
   progressWrapper.appendChild(track);
   panel.appendChild(progressWrapper);
 
+  if (typeof state.activeScan.discoveredFiles === 'number') {
+    const numberLocale = state.locale === 'zh' ? 'zh-CN' : 'en-US';
+    const metrics = createElement('div', { className: 'scan-metrics' });
+    metrics.appendChild(
+      createElement('div', {
+        className: 'scan-metric',
+        children: [
+          createElement('span', {
+            className: 'scan-metric-label',
+            text:
+              overlayPack.discoveryLabel ||
+              overlayPack.discoveryStats ||
+              pack.monitor?.discoveryColumn ||
+              'Discovered / Total'
+          }),
+          createElement('strong', {
+            className: 'scan-metric-value',
+            text: `${(state.activeScan.discoveredFiles || 0).toLocaleString(numberLocale)} / ${(state.activeScan.totalBookFiles || 0).toLocaleString(
+              numberLocale
+            )}`
+          })
+        ]
+      })
+    );
+    metrics.appendChild(
+      createElement('div', {
+        className: 'scan-metric',
+        children: [
+          createElement('span', {
+            className: 'scan-metric-label',
+            text: overlayPack.scannedLabel || pack.monitor?.scannedColumn || 'Files scanned'
+          }),
+          createElement('strong', {
+            className: 'scan-metric-value',
+            text: (state.activeScan.scannedFiles || 0).toLocaleString(numberLocale)
+          })
+        ]
+      })
+    );
+    panel.appendChild(metrics);
+  }
+
   panel.appendChild(createElement('h4', { text: overlayPack.logTitle }));
   const logBox = createElement('div', { className: 'scan-log' });
   if (!state.activeScan.logs.length) {
@@ -3319,6 +3563,119 @@ function renderScanOverlay(pack) {
   });
   actions.appendChild(homeButton);
   actions.appendChild(openButton);
+  panel.appendChild(actions);
+  overlay.appendChild(panel);
+  return overlay;
+}
+
+function renderJobLogOverlay(pack) {
+  if (!state.jobLogViewer) {
+    return null;
+  }
+  const job = state.jobs.find((entry) => entry.id === state.jobLogViewer);
+  if (!job) {
+    state.jobLogViewer = null;
+    return null;
+  }
+  const overlayPack = (pack.monitor && pack.monitor.logViewer) || {};
+  const overlay = createElement('div', { className: 'modal-overlay job-log-overlay' });
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeJobLog();
+    }
+  });
+  const panel = createElement('div', { className: 'modal-panel wizard scan-panel job-log-panel' });
+  const jobName = job.label || getJobTypeLabel(job.type);
+  const statusLabel = pack.monitor?.statuses?.[job.status] || job.status;
+  const titleTemplate = overlayPack.title || 'Scan log · {job}';
+  panel.appendChild(createElement('h3', { text: titleTemplate.replace('{job}', jobName) }));
+  const subtitleTemplate = overlayPack.subtitle || '{status} · {progress}';
+  panel.appendChild(
+    createElement('p', {
+      className: 'wizard-helper',
+      text: subtitleTemplate.replace('{status}', statusLabel).replace('{progress}', `${job.progress}%`)
+    })
+  );
+
+  if (Array.isArray(job.paths) && job.paths.length) {
+    const pathGroup = createElement('div', { className: 'scan-paths' });
+    const pathsTitle = overlayPack.pathsTitle || pack.scanOverlay?.pathsTitle || 'Paths';
+    pathGroup.appendChild(createElement('span', { className: 'scan-paths-label', text: pathsTitle }));
+    const pathList = createElement('ul');
+    job.paths.forEach((pathValue) => {
+      pathList.appendChild(createElement('li', { text: pathValue }));
+    });
+    pathGroup.appendChild(pathList);
+    panel.appendChild(pathGroup);
+  }
+
+  if (job.type === 'scan') {
+    const numberLocale = state.locale === 'zh' ? 'zh-CN' : 'en-US';
+    const metrics = createElement('div', { className: 'scan-metrics' });
+    metrics.appendChild(
+      createElement('div', {
+        className: 'scan-metric',
+        children: [
+          createElement('span', {
+            className: 'scan-metric-label',
+            text:
+              overlayPack.discoveryLabel ||
+              overlayPack.discoveryStats ||
+              pack.monitor?.discoveryColumn ||
+              'Discovered / Total'
+          }),
+          createElement('strong', {
+            className: 'scan-metric-value',
+            text: `${(job.discoveredFiles || 0).toLocaleString(numberLocale)} / ${(job.totalBookFiles || 0).toLocaleString(
+              numberLocale
+            )}`
+          })
+        ]
+      })
+    );
+    metrics.appendChild(
+      createElement('div', {
+        className: 'scan-metric',
+        children: [
+          createElement('span', {
+            className: 'scan-metric-label',
+            text: overlayPack.scannedLabel || pack.monitor?.scannedColumn || 'Files scanned'
+          }),
+          createElement('strong', {
+            className: 'scan-metric-value',
+            text: (job.scannedFiles || 0).toLocaleString(numberLocale)
+          })
+        ]
+      })
+    );
+    panel.appendChild(metrics);
+  }
+
+  panel.appendChild(
+    createElement('h4', { text: overlayPack.logTitle || pack.scanOverlay?.logTitle || 'Activity log' })
+  );
+  const logBox = createElement('div', { className: 'scan-log' });
+  if (!Array.isArray(job.logs) || !job.logs.length) {
+    const emptyText =
+      overlayPack.empty ||
+      overlayPack.logs?.empty ||
+      pack.scanOverlay?.logs?.empty ||
+      (state.locale === 'zh' ? '暂无日志记录' : 'No log entries yet.');
+    logBox.appendChild(createElement('p', { className: 'wizard-helper', text: emptyText }));
+  } else {
+    const logList = createElement('ul');
+    job.logs.forEach((entry) => {
+      logList.appendChild(createElement('li', { text: entry }));
+    });
+    logBox.appendChild(logList);
+  }
+  panel.appendChild(logBox);
+
+  const actions = createElement('div', { className: 'modal-actions' });
+  const closeButton = createElement('button', { className: 'ghost-button', text: overlayPack.close || 'Close' });
+  closeButton.type = 'button';
+  closeButton.addEventListener('click', () => closeJobLog());
+  actions.appendChild(closeButton);
   panel.appendChild(actions);
   overlay.appendChild(panel);
   return overlay;
@@ -3363,6 +3720,10 @@ function renderApp() {
     if (scanOverlay) {
       root.appendChild(scanOverlay);
     }
+  }
+  const jobLogOverlay = renderJobLogOverlay(pack);
+  if (jobLogOverlay) {
+    root.appendChild(jobLogOverlay);
   }
   const exportModal = renderExportModal(pack);
   if (exportModal) {

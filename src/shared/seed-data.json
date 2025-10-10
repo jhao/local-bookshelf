@@ -142,6 +142,8 @@
           "running": "Scanning folders…",
           "completed": "Scan complete"
         },
+        "discoveryLabel": "Discovered / Book files",
+        "scannedLabel": "Files scanned",
         "pathsTitle": "Folders being indexed",
         "logTitle": "Activity log",
         "logs": {
@@ -165,16 +167,30 @@
         "tableHeaders": [
           "Job",
           "Collection",
+          "Discovered / Book files",
           "Progress",
+          "Files scanned",
           "Status",
           "Updated"
         ],
+        "discoveryColumn": "Discovered / Book files",
+        "scannedColumn": "Files scanned",
         "empty": "No active jobs. Launch a rescan or metadata refresh to see updates.",
         "statuses": {
           "queued": "Queued",
           "running": "Scanning",
           "completed": "Completed",
           "failed": "Failed"
+        },
+        "logViewer": {
+          "title": "Scan log · {job}",
+          "subtitle": "{status} · {progress}",
+          "pathsTitle": "Scanning roots",
+          "discoveryLabel": "Discovered / Book files",
+          "scannedLabel": "Files scanned",
+          "logTitle": "Activity log",
+          "empty": "Logs will appear here as the scan progresses.",
+          "close": "Close"
         }
       },
       "collectionDetail": {
@@ -473,6 +489,8 @@
           "running": "扫描进行中…",
           "completed": "扫描完成"
         },
+        "discoveryLabel": "已发现文件 / 图书文件",
+        "scannedLabel": "已扫描文件数量",
         "pathsTitle": "扫描中的文件夹",
         "logTitle": "活动日志",
         "logs": {
@@ -496,16 +514,30 @@
         "tableHeaders": [
           "任务",
           "收藏集",
+          "已发现文件 / 图书文件",
           "进度",
+          "已扫描文件数量",
           "状态",
           "更新时间"
         ],
+        "discoveryColumn": "已发现文件 / 图书文件",
+        "scannedColumn": "已扫描文件数量",
         "empty": "暂无任务，可发起重新扫描或元数据刷新以查看动态。",
         "statuses": {
           "queued": "排队中",
           "running": "扫描中",
           "completed": "已完成",
           "failed": "失败"
+        },
+        "logViewer": {
+          "title": "扫描日志 · {job}",
+          "subtitle": "{status} · {progress}",
+          "pathsTitle": "扫描起始路径",
+          "discoveryLabel": "已发现文件 / 图书文件",
+          "scannedLabel": "已扫描文件数量",
+          "logTitle": "活动日志",
+          "empty": "扫描过程中产生的日志会显示在此处。",
+          "close": "关闭"
         }
       },
       "collectionDetail": {
