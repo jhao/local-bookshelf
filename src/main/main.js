@@ -589,6 +589,31 @@ async function extractEpubPreview(buffer) {
   return null;
 }
 
+function isAzw3DrmProtected(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 86) {
+    return false;
+  }
+  try {
+    const recordCount = buffer.readUInt16BE(76);
+    if (!recordCount || buffer.length < 78 + recordCount * 8) {
+      return false;
+    }
+    const record0Offset = buffer.readUInt32BE(78);
+    if (record0Offset + 18 > buffer.length) {
+      return false;
+    }
+    const signature = buffer.toString('ascii', record0Offset + 16, record0Offset + 20);
+    if (signature !== 'MOBI') {
+      return false;
+    }
+    const encryptionType = buffer.readUInt16BE(record0Offset + 12);
+    return encryptionType !== 0;
+  } catch (error) {
+    console.warn('Failed to inspect AZW3 DRM status', error);
+    return false;
+  }
+}
+
 async function extractAzw3Preview(buffer) {
   if (!Buffer.isBuffer(buffer)) {
     return '';
@@ -722,6 +747,7 @@ ipcMain.handle('preview:load', async (_event, options = {}) => {
 
   try {
     const buffer = await fsPromises.readFile(filePath);
+    let azw3DrmProtected = false;
     if (format === 'pdf') {
       return {
         success: true,
@@ -744,12 +770,16 @@ ipcMain.handle('preview:load', async (_event, options = {}) => {
       }
     }
     if (format === 'azw3') {
+      azw3DrmProtected = isAzw3DrmProtected(buffer);
+      if (azw3DrmProtected) {
+        return { success: false, error: 'Preview unavailable: AZW3 file is DRM-protected.' };
+      }
       const html = await extractAzw3Preview(buffer);
       if (html) {
         return { success: true, kind: 'html', content: html };
       }
     }
-    if (format === 'mobi' || format === 'azw3') {
+    if (format === 'mobi' || (format === 'azw3' && !azw3DrmProtected)) {
       const text = extractReadableText(buffer);
       if (text) {
         return { success: true, kind: 'text', content: text };
