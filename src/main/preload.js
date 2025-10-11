@@ -33,5 +33,23 @@ contextBridge.exposeInMainWorld('api', {
   },
   ttsSynthesize(options) {
     return ipcRenderer.invoke('tts:synthesize', options);
+  },
+  onMenuCommand(callback) {
+    if (typeof callback !== 'function') {
+      return () => {};
+    }
+    const subscription = (_event, command) => {
+      callback(command);
+    };
+    ipcRenderer.on('menu:command', subscription);
+    return () => {
+      ipcRenderer.removeListener('menu:command', subscription);
+    };
+  },
+  notifyLocaleChanged(locale) {
+    if (!locale) {
+      return;
+    }
+    ipcRenderer.send('locale:changed', locale);
   }
 });

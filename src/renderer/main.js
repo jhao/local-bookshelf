@@ -361,6 +361,7 @@ const state = {
   floatingAssistantOpen: false
 };
 
+let reportedLocale = null;
 let jobCounter = 0;
 
 const persistence = {
@@ -667,6 +668,10 @@ async function initializeApp() {
     persistence.hydrating = false;
     initializeTtsEngine();
     renderApp();
+    if (window.api?.notifyLocaleChanged) {
+      window.api.notifyLocaleChanged(state.locale);
+    }
+    reportedLocale = state.locale;
     persistence.hydrated = true;
     schedulePersist(true);
   }
@@ -2426,15 +2431,28 @@ function switchLocale(locale) {
   }
   state.locale = locale;
   renderApp();
+  if (window.api?.notifyLocaleChanged && reportedLocale !== state.locale) {
+    window.api.notifyLocaleChanged(state.locale);
+  }
+  reportedLocale = state.locale;
+}
+
+if (window.api?.onMenuCommand) {
+  window.api.onMenuCommand((command) => {
+    if (!command || typeof command !== 'object') {
+      return;
+    }
+    if (command.type === 'navigate' && command.target) {
+      setActivePage(command.target);
+      return;
+    }
+    if (command.type === 'locale' && command.locale) {
+      switchLocale(command.locale);
+    }
+  });
 }
 
 function renderTopBar(pack) {
-  const titleGroup = createElement('div', { className: 'hero-group' });
-  titleGroup.appendChild(createElement('h1', { text: pack.heroTitle }));
-  if (pack.heroSubtitle) {
-    titleGroup.appendChild(createElement('p', { text: pack.heroSubtitle }));
-  }
-
   const actions = createElement('div', { className: 'action-group' });
   const monitorButton = createElement('button', {
     className: `pill-button${state.activePage === 'monitor' ? ' active' : ''}`,
@@ -2479,13 +2497,13 @@ function renderTopBar(pack) {
 
   return createElement('header', {
     className: 'top-bar',
-    children: [titleGroup, actions]
+    children: [actions]
   });
 }
 
 function renderBreadcrumbs(pack) {
   const nav = createElement('nav', {
-    className: 'breadcrumbs',
+    className: 'breadcrumbs breadcrumb-bar',
     attributes: { 'aria-label': state.locale === 'zh' ? '页面导航' : 'Page navigation' }
   });
   const list = createElement('ol');
@@ -5674,8 +5692,8 @@ function renderApp() {
   root.innerHTML = '';
   const appShell = createElement('div', { className: 'app-shell' });
   appShell.appendChild(renderTopBar(pack));
-  appShell.appendChild(renderBreadcrumbs(pack));
 
+  const breadcrumbBar = renderBreadcrumbs(pack);
   if (state.activePage === 'dashboard') {
     appShell.appendChild(renderDashboardPage(pack));
   } else if (state.activePage === 'collection' && state.selectedCollectionId) {
@@ -5688,6 +5706,9 @@ function renderApp() {
     appShell.appendChild(renderSettingsPage(pack));
   } else {
     appShell.appendChild(renderDashboardPage(pack));
+  }
+  if (breadcrumbBar) {
+    root.appendChild(breadcrumbBar);
   }
   root.appendChild(appShell);
   if (state.showWizard) {
