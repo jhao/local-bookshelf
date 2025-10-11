@@ -369,6 +369,18 @@ function sanitizePlainText(content) {
     .trim();
 }
 
+function escapeHtml(content) {
+  if (!content) {
+    return '';
+  }
+  return content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function extractReadableText(buffer) {
   if (!Buffer.isBuffer(buffer)) {
     return '';
@@ -452,6 +464,44 @@ async function extractEpubPreview(buffer) {
   return null;
 }
 
+async function extractAzw3Preview(buffer) {
+  if (!Buffer.isBuffer(buffer)) {
+    return '';
+  }
+  const zipSignature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  const zipIndex = buffer.indexOf(zipSignature);
+  if (zipIndex === -1) {
+    return '';
+  }
+  try {
+    const zipSlice = buffer.slice(zipIndex);
+    const zip = await JSZip.loadAsync(zipSlice);
+    const htmlFiles = zip
+      .file(/\.x?html?$/i)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of htmlFiles) {
+      const html = await entry.async('text');
+      const sanitized = sanitizeHtmlSnippet(html);
+      if (sanitized && sanitized.trim().length > 0) {
+        return sanitized;
+      }
+    }
+    const textFiles = zip
+      .file(/\.txt$/i)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of textFiles) {
+      const text = await entry.async('text');
+      const cleaned = sanitizePlainText(text);
+      if (cleaned && cleaned.trim().length > 0) {
+        return `<pre>${escapeHtml(cleaned)}</pre>`;
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to extract AZW3 preview', error);
+  }
+  return '';
+}
+
 ipcMain.handle('tts:list-voices', async () => {
   try {
     const voices = await tts.listVoices();
@@ -509,6 +559,12 @@ ipcMain.handle('preview:load', async (_event, options = {}) => {
     }
     if (format === 'epub') {
       const html = await extractEpubPreview(buffer);
+      if (html) {
+        return { success: true, kind: 'html', content: html };
+      }
+    }
+    if (format === 'azw3') {
+      const html = await extractAzw3Preview(buffer);
       if (html) {
         return { success: true, kind: 'html', content: html };
       }
