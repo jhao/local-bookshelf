@@ -1,8 +1,15 @@
-const { pipeline } = require('@xenova/transformers');
-
 let ttsPipelinePromise = null;
 let ttsVoices = null;
 let busy = false;
+
+let pipelineFunctionPromise = null;
+
+async function getPipelineFunction() {
+  if (!pipelineFunctionPromise) {
+    pipelineFunctionPromise = import('@xenova/transformers').then((mod) => mod.pipeline);
+  }
+  return pipelineFunctionPromise;
+}
 const MODEL_CANDIDATES = [
   'Xenova/vits-multilingual-mini',
   'Xenova/vits-multilingual',
@@ -15,6 +22,7 @@ async function ensurePipeline() {
   let lastError = null;
   for (const model of MODEL_CANDIDATES) {
     try {
+      const pipeline = await getPipelineFunction();
       ttsPipelinePromise = pipeline('text-to-speech', model, { quantized: true });
       const instance = await ttsPipelinePromise;
       return instance;
