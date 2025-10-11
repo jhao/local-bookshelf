@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const util = require('util');
@@ -22,14 +22,32 @@ const {
 
 const tts = require('./tts');
 const isDev = process.env.NODE_ENV !== 'production';
+const WINDOW_ASPECT_RATIO = 3 / 4;
+
+let languageMenuItems = {
+  en: null,
+  zh: null
+};
 
 function createWindow() {
+  const { workAreaSize } = screen.getPrimaryDisplay();
+  let targetHeight = Math.round(workAreaSize.height * 0.8);
+  let targetWidth = Math.round(targetHeight * WINDOW_ASPECT_RATIO);
+
+  if (targetWidth > workAreaSize.width) {
+    targetWidth = Math.round(workAreaSize.width * 0.9);
+    targetHeight = Math.round(targetWidth / WINDOW_ASPECT_RATIO);
+  }
+
+  const minWidth = Math.min(targetWidth, Math.max(Math.round(targetWidth * 0.6), 480));
+  const minHeight = Math.min(targetHeight, Math.max(Math.round(targetHeight * 0.6), 600));
+
   const mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1200,
-    minHeight: 800,
-    title: 'Local Bookshelf',
+    width: targetWidth,
+    height: targetHeight,
+    minWidth,
+    minHeight,
+    title: '本地图书管理',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -37,6 +55,83 @@ function createWindow() {
       sandbox: false
     }
   });
+
+  mainWindow.setAspectRatio(WINDOW_ASPECT_RATIO);
+
+  const template = [
+    ...(process.platform === 'darwin'
+      ? [
+          {
+            role: 'appMenu'
+          }
+        ]
+      : []),
+    {
+      label: '后台任务',
+      click: () => {
+        if (
+          !mainWindow.isDestroyed() &&
+          mainWindow.webContents &&
+          !mainWindow.webContents.isDestroyed()
+        ) {
+          mainWindow.webContents.send('menu:command', { type: 'navigate', target: 'monitor' });
+        }
+      }
+    },
+    {
+      label: '系统设置',
+      click: () => {
+        if (
+          !mainWindow.isDestroyed() &&
+          mainWindow.webContents &&
+          !mainWindow.webContents.isDestroyed()
+        ) {
+          mainWindow.webContents.send('menu:command', { type: 'navigate', target: 'settings' });
+        }
+      }
+    },
+    {
+      label: '语言切换',
+      submenu: [
+        {
+          id: 'language-en',
+          label: 'English',
+          type: 'radio',
+          checked: true,
+          click: () => {
+            if (
+              !mainWindow.isDestroyed() &&
+              mainWindow.webContents &&
+              !mainWindow.webContents.isDestroyed()
+            ) {
+              mainWindow.webContents.send('menu:command', { type: 'locale', locale: 'en' });
+            }
+          }
+        },
+        {
+          id: 'language-zh',
+          label: '中文',
+          type: 'radio',
+          click: () => {
+            if (
+              !mainWindow.isDestroyed() &&
+              mainWindow.webContents &&
+              !mainWindow.webContents.isDestroyed()
+            ) {
+              mainWindow.webContents.send('menu:command', { type: 'locale', locale: 'zh' });
+            }
+          }
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+  languageMenuItems = {
+    en: menu.getMenuItemById('language-en'),
+    zh: menu.getMenuItemById('language-zh')
+  };
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
@@ -78,6 +173,18 @@ ipcMain.handle('dialog:select-directory', async (event, options = {}) => {
     return null;
   }
   return result.filePaths[0];
+});
+
+ipcMain.on('locale:changed', (_event, locale) => {
+  if (!locale) {
+    return;
+  }
+  if (languageMenuItems.en) {
+    languageMenuItems.en.checked = locale === 'en';
+  }
+  if (languageMenuItems.zh) {
+    languageMenuItems.zh.checked = locale === 'zh';
+  }
 });
 
 ipcMain.handle('state:load', async () => {
