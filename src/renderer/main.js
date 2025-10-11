@@ -3466,6 +3466,7 @@ function wrapPreviewHtml(content) {
       h1, h2, h3, h4 { color: #0f172a; }
       img, video { max-width: 100%; height: auto; }
       p { margin: 0 0 1em; }
+      pre { white-space: pre-wrap; background: #f8fafc; padding: 20px; border-radius: 12px; line-height: 1.7; }
     </style>
   `;
   return `<!DOCTYPE html><html><head><meta charset="utf-8">${styles}</head><body>${content}</body></html>`;
@@ -3552,6 +3553,7 @@ function renderPreviewViewer(pack, book, previewState) {
     frameWrapper.style.transform = `scale(${previewState.zoom})`;
     frameWrapper.style.transformOrigin = 'top left';
     frameWrapper.style.width = `${(1 / previewState.zoom) * 100}%`;
+    frameWrapper.style.height = '100%';
     const frame = createElement('iframe', {
       className: 'preview-frame',
       attributes: {
@@ -3562,6 +3564,7 @@ function renderPreviewViewer(pack, book, previewState) {
       }
     });
     frame.setAttribute('loading', 'lazy');
+    frame.style.height = '100%';
     frameWrapper.appendChild(frame);
     viewer.appendChild(frameWrapper);
     return viewer;
@@ -3571,6 +3574,7 @@ function renderPreviewViewer(pack, book, previewState) {
     frameWrapper.style.transform = `scale(${previewState.zoom})`;
     frameWrapper.style.transformOrigin = 'top left';
     frameWrapper.style.width = `${(1 / previewState.zoom) * 100}%`;
+    frameWrapper.style.height = '100%';
     const frame = createElement('iframe', {
       className: 'preview-frame',
       attributes: {
@@ -3580,6 +3584,7 @@ function renderPreviewViewer(pack, book, previewState) {
       }
     });
     frame.setAttribute('loading', 'lazy');
+    frame.style.height = '100%';
     frameWrapper.appendChild(frame);
     viewer.appendChild(frameWrapper);
     return viewer;
@@ -3590,6 +3595,7 @@ function renderPreviewViewer(pack, book, previewState) {
   });
   textBlock.setAttribute('dir', 'auto');
   textBlock.style.fontSize = `${Math.max(0.8, previewState.zoom)}rem`;
+  textBlock.style.height = '100%';
   if (state.ttsState.playing && state.ttsState.highlight) {
     textBlock.classList.add('tts-active');
   }
