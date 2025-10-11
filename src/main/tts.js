@@ -3,6 +3,27 @@ let ttsVoices = null;
 let busy = false;
 
 let pipelineFunctionPromise = null;
+let proxyConfigured = false;
+
+function configureProxy() {
+  if (proxyConfigured) {
+    return;
+  }
+  proxyConfigured = true;
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+  if (!proxyUrl) {
+    return;
+  }
+  try {
+    // Node's global fetch is powered by undici. Configure it to honour proxy settings
+    // if the host environment provides them.
+    const { ProxyAgent, setGlobalDispatcher } = require('undici');
+    const agent = new ProxyAgent(proxyUrl);
+    setGlobalDispatcher(agent);
+  } catch (error) {
+    console.warn('Failed to configure proxy for text-to-speech downloads', error);
+  }
+}
 
 async function getPipelineFunction() {
   if (!pipelineFunctionPromise) {
@@ -19,6 +40,7 @@ async function ensurePipeline() {
   if (ttsPipelinePromise) {
     return ttsPipelinePromise;
   }
+  configureProxy();
   let lastError = null;
   for (const model of MODEL_CANDIDATES) {
     try {
