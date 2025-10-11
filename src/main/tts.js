@@ -4,6 +4,79 @@ let busy = false;
 
 let pipelineFunctionPromise = null;
 let proxyConfigured = false;
+let authConfigured = false;
+
+function getHuggingFaceToken() {
+  const candidates = [
+    'HF_TOKEN',
+    'HF_HUB_TOKEN',
+    'HF_API_TOKEN',
+    'HUGGING_FACE_TOKEN',
+    'HUGGINGFACE_TOKEN',
+    'HUGGINGFACE_API_TOKEN',
+    'HUGGING_FACE_HUB_TOKEN',
+    'HUGGINGFACEHUB_TOKEN',
+    'HUGGINGFACEHUB_API_TOKEN'
+  ];
+  for (const key of candidates) {
+    const value = process.env[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function configureAuth() {
+  if (authConfigured) {
+    return;
+  }
+  const token = getHuggingFaceToken();
+  if (!token) {
+    return;
+  }
+  const originalFetch = globalThis.fetch;
+  if (typeof originalFetch !== 'function') {
+    return;
+  }
+  const RequestConstructor = typeof globalThis.Request === 'function' ? globalThis.Request : null;
+  const HeadersConstructor = typeof globalThis.Headers === 'function' ? globalThis.Headers : null;
+  if (!RequestConstructor || !HeadersConstructor) {
+    return;
+  }
+  authConfigured = true;
+  globalThis.fetch = async (input, init = {}) => {
+    try {
+      let url = null;
+      if (typeof input === 'string') {
+        url = input;
+      } else if (input instanceof URL) {
+        url = input.toString();
+      } else if (input && typeof input.url === 'string') {
+        url = input.url;
+      }
+      if (url && url.startsWith('https://huggingface.co/')) {
+        const headers = new HeadersConstructor(
+          init.headers || (typeof input === 'object' && input ? input.headers : undefined)
+        );
+        if (!headers.has('authorization') && !headers.has('Authorization')) {
+          headers.set('Authorization', `Bearer ${token}`);
+        }
+        if (typeof input === 'string') {
+          return originalFetch(input, { ...init, headers });
+        }
+        if (input instanceof RequestConstructor) {
+          const request = new RequestConstructor(input, { ...init, headers });
+          return originalFetch(request);
+        }
+        return originalFetch(url, { ...init, headers });
+      }
+    } catch (error) {
+      console.warn('Failed to apply Hugging Face authorization header', error);
+    }
+    return originalFetch(input, init);
+  };
+}
 
 function configureProxy() {
   if (proxyConfigured) {
@@ -41,6 +114,7 @@ async function ensurePipeline() {
     return ttsPipelinePromise;
   }
   configureProxy();
+  configureAuth();
   let lastError = null;
   for (const model of MODEL_CANDIDATES) {
     try {
