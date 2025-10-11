@@ -3477,6 +3477,59 @@ function trimPreviewText(text, limit = 40000) {
   return `${normalized.slice(0, limit)}…`;
 }
 
+function createObjectUrlFromDataUrl(dataUrl) {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+    return '';
+  }
+  const separatorIndex = dataUrl.indexOf(',');
+  if (separatorIndex === -1) {
+    return '';
+  }
+  const meta = dataUrl.slice(5, separatorIndex);
+  const data = dataUrl.slice(separatorIndex + 1);
+  const isBase64 = meta.includes(';base64');
+  const mime = meta.replace(/;base64/, '') || 'application/octet-stream';
+  try {
+    let byteString;
+    if (isBase64) {
+      byteString = atob(data);
+    } else {
+      byteString = decodeURIComponent(data);
+    }
+    const bytes = new Uint8Array(byteString.length);
+    for (let i = 0; i < byteString.length; i += 1) {
+      bytes[i] = byteString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch (error) {
+    console.warn('Failed to create object URL for preview asset', error);
+  }
+  return '';
+}
+
+function disposePreviewAsset(bookId) {
+  const asset = state.previewAssets[bookId];
+  if (asset?.objectUrl) {
+    try {
+      URL.revokeObjectURL(asset.objectUrl);
+    } catch (error) {
+      console.warn('Failed to revoke preview object URL', error);
+    }
+  }
+}
+
+function storePreviewAsset(bookId, payload) {
+  disposePreviewAsset(bookId);
+  if (payload && payload.kind === 'dataUrl' && typeof payload.data === 'string') {
+    const objectUrl = createObjectUrlFromDataUrl(payload.data);
+    if (objectUrl) {
+      payload = { ...payload, objectUrl };
+    }
+  }
+  state.previewAssets[bookId] = payload;
+}
+
 function wrapPreviewHtml(content) {
   const styles = `
     <style>
@@ -3496,6 +3549,12 @@ function ensurePreviewAsset(book) {
   }
   const cached = state.previewAssets[book.id];
   if (cached) {
+    if (cached.kind === 'dataUrl' && typeof cached.data === 'string' && !cached.objectUrl) {
+      const objectUrl = createObjectUrlFromDataUrl(cached.data);
+      if (objectUrl) {
+        cached.objectUrl = objectUrl;
+      }
+    }
     return cached;
   }
   if (!book.path || !window.api?.loadPreviewAsset) {
@@ -3503,10 +3562,10 @@ function ensurePreviewAsset(book) {
     const result = fallback
       ? { status: 'ready', kind: 'text', content: fallback }
       : { status: 'error', error: 'unavailable' };
-    state.previewAssets[book.id] = result;
-    return result;
+    storePreviewAsset(book.id, result);
+    return state.previewAssets[book.id];
   }
-  state.previewAssets[book.id] = { status: 'loading' };
+  storePreviewAsset(book.id, { status: 'loading' });
   window.api
     .loadPreviewAsset({ path: book.path, format: book.format })
     .then((response) => {
@@ -3515,17 +3574,17 @@ function ensurePreviewAsset(book) {
         if (payload.kind === 'text') {
           payload.content = trimPreviewText(payload.content);
         }
-        state.previewAssets[book.id] = payload;
+        storePreviewAsset(book.id, payload);
       } else {
-        state.previewAssets[book.id] = {
+        storePreviewAsset(book.id, {
           status: 'error',
           error: response?.error || 'unavailable'
-        };
+        });
       }
       renderApp();
     })
     .catch((error) => {
-      state.previewAssets[book.id] = { status: 'error', error: error?.message || 'unavailable' };
+      storePreviewAsset(book.id, { status: 'error', error: error?.message || 'unavailable' });
       renderApp();
     });
   return state.previewAssets[book.id];
@@ -3575,9 +3634,9 @@ function renderPreviewViewer(pack, book, previewState) {
     const frame = createElement('iframe', {
       className: 'preview-frame',
       attributes: {
-        src: asset.data,
+        src: asset.objectUrl || asset.data,
         title: `${book.title} preview`,
-        sandbox: 'allow-same-origin allow-scripts',
+        sandbox: 'allow-same-origin allow-scripts allow-forms',
         allow: 'fullscreen'
       }
     });
@@ -5754,6 +5813,12 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     exitPreviewFullscreen();
   }
+});
+
+window.addEventListener('beforeunload', () => {
+  Object.keys(state.previewAssets || {}).forEach((key) => {
+    disposePreviewAsset(key);
+  });
 });
 
 if (document.readyState === 'loading') {

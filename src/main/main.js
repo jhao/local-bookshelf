@@ -488,17 +488,35 @@ function escapeHtml(content) {
     .replace(/'/g, '&#39;');
 }
 
+function isMeaningfulText(content) {
+  if (!content || content.trim().length < 32) {
+    return false;
+  }
+  const letters = content.match(/\p{L}/gu) || [];
+  if (letters.length < 16) {
+    return false;
+  }
+  const replacementChars = (content.match(/\uFFFD/g) || []).length;
+  if (replacementChars > content.length * 0.05) {
+    return false;
+  }
+  return true;
+}
+
 function extractReadableText(buffer) {
   if (!Buffer.isBuffer(buffer)) {
     return '';
   }
   const utf8 = buffer.toString('utf8');
   let cleaned = sanitizePlainText(utf8);
-  if (cleaned.length < 64) {
+  if (!isMeaningfulText(cleaned)) {
     const latin = sanitizePlainText(buffer.toString('latin1'));
     if (latin.length > cleaned.length) {
       cleaned = latin;
     }
+  }
+  if (!isMeaningfulText(cleaned)) {
+    return '';
   }
   if (cleaned.length > 40000) {
     cleaned = `${cleaned.slice(0, 40000)}…`;
@@ -583,6 +601,61 @@ async function extractAzw3Preview(buffer) {
   try {
     const zipSlice = buffer.slice(zipIndex);
     const zip = await JSZip.loadAsync(zipSlice);
+    const opfEntries = zip
+      .file(/\.opf$/i)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of opfEntries) {
+      try {
+        const opfXml = await entry.async('text');
+        const opf = xmlParser.parse(opfXml);
+        const manifestRaw = opf?.package?.manifest?.item;
+        const spineRaw = opf?.package?.spine?.itemref;
+        const manifestItems = manifestRaw
+          ? Array.isArray(manifestRaw)
+            ? manifestRaw
+            : [manifestRaw]
+          : [];
+        const spineItems = spineRaw ? (Array.isArray(spineRaw) ? spineRaw : [spineRaw]) : [];
+        if (manifestItems.length === 0 || spineItems.length === 0) {
+          continue;
+        }
+        const manifestMap = new Map();
+        for (const item of manifestItems) {
+          const id = item?.id || item?.['@_id'] || item?.Id || item?.ID;
+          const href = item?.href || item?.['@_href'] || item?.Href || item?.HREF;
+          const mediaType =
+            item?.['media-type'] || item?.mediaType || item?.['@_media-type'] || item?.MediaType;
+          if (id && href) {
+            manifestMap.set(id, { href, mediaType });
+          }
+        }
+        if (!manifestMap.size) {
+          continue;
+        }
+        const basePath = entry.name.includes('/') ? entry.name.slice(0, entry.name.lastIndexOf('/') + 1) : '';
+        for (const spineItem of spineItems) {
+          const idref = spineItem?.idref || spineItem?.['@_idref'] || spineItem?.idRef || spineItem?.IDREF;
+          if (!idref || !manifestMap.has(idref)) {
+            continue;
+          }
+          const target = manifestMap.get(idref);
+          if (target.mediaType && !/html|xml/i.test(target.mediaType)) {
+            continue;
+          }
+          const normalizedPath = path.posix.join(basePath, target.href).replace(/^\//, '');
+          const htmlFile = zip.file(normalizedPath) || zip.file(target.href);
+          if (htmlFile) {
+            const html = await htmlFile.async('text');
+            const sanitized = sanitizeHtmlSnippet(html);
+            if (sanitized && sanitized.trim().length > 0) {
+              return sanitized;
+            }
+          }
+        }
+      } catch (innerError) {
+        console.warn('Failed to parse AZW3 OPF entry', entry?.name, innerError);
+      }
+    }
     const htmlFiles = zip
       .file(/\.x?html?$/i)
       .sort((a, b) => a.name.localeCompare(b.name));
