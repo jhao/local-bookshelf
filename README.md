@@ -46,6 +46,19 @@ npm run serve
 
 This starts a lightweight static server on `http://localhost:4173` that serves the renderer bundle without launching Electron. 注意：在浏览器中打开时不会提供原生 API，仅供静态预览使用。
 
+### 5. Configure text-to-speech models / 配置文本转语音模型
+
+By default the bundled text-to-speech pipeline downloads small VITS checkpoints from Hugging Face. If that domain is blocked in your environment, configure the following environment variables before launching the app so it can reuse mirrors or fully offline models. 默认情况下，内置的文本转语音功能会从 Hugging Face 下载 VITS 模型。如果网络无法访问该站点，可以在启动应用前设置以下环境变量以切换到国内镜像或完全离线的模型。
+
+| Variable | Description |
+| --- | --- |
+| `TTS_MODEL_DIR` | Absolute or relative path to a local directory that already contains the model files (for example a directory downloaded from a domestic mirror). 指向已下载模型文件的本地目录。 |
+| `TTS_MODEL_PREFERENCES` | Comma- or semicolon-separated list of additional model identifiers or paths to try before the built-in defaults. 支持使用逗号或分号分隔的模型名称或路径。 |
+| `TTS_MODEL_MIRRORS` | Comma- or semicolon-separated list of mirror base URLs (e.g. `https://hf-mirror.com`). The first entry automatically sets `HF_ENDPOINT`, so `@xenova/transformers` resolves downloads through that mirror. 配置国内镜像的基础 URL，会自动设置 `HF_ENDPOINT`。 |
+| `TTS_DISABLE_HF` | Set to `true` to skip requests to the original Hugging Face domain entirely. 将该变量设置为 `true` 可以完全禁用对 Hugging Face 正式站点的访问。 |
+
+When `TTS_MODEL_DIR` (or any local path listed in `TTS_MODEL_PREFERENCES`) is present and readable, the application loads the checkpoint strictly from disk without issuing any network requests. 配置 `TTS_MODEL_DIR` 或其他本地路径后，程序会直接读取本地模型而不会访问网络。
+
 ## Packaging for Release / 发布打包
 
 The project uses the plain Electron runtime, so packaging relies on [`electron-packager`](https://github.com/electron/electron-packager). You can invoke it on-demand with `npx` without permanently adding a dependency. 项目默认使用 Electron 运行时，可以直接通过 `npx electron-packager` 进行跨平台打包。

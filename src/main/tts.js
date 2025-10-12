@@ -1,3 +1,7 @@
+const fs = require('fs');
+const path = require('path');
+const { fileURLToPath } = require('url');
+
 let ttsPipelinePromise = null;
 let ttsVoices = null;
 let busy = false;
@@ -5,6 +9,7 @@ let busy = false;
 let pipelineFunctionPromise = null;
 let proxyConfigured = false;
 let authConfigured = false;
+let mirrorsConfigured = false;
 
 function getHuggingFaceToken() {
   const candidates = [
@@ -104,27 +109,156 @@ async function getPipelineFunction() {
   }
   return pipelineFunctionPromise;
 }
-const MODEL_CANDIDATES = [
-  'Xenova/vits-multilingual-mini',
-  'Xenova/vits-multilingual',
-  'Xenova/tts_en'
-];
+function parseListEnv(value) {
+  if (typeof value !== 'string') {
+    return [];
+  }
+  return value
+    .split(/[;,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeLocalPath(candidate) {
+  if (candidate.startsWith('file://')) {
+    try {
+      return fileURLToPath(candidate);
+    } catch (error) {
+      console.warn('Invalid file URL for TTS model', candidate, error);
+      return null;
+    }
+  }
+  if (candidate.startsWith('.') || candidate.startsWith('/') || candidate.startsWith('\\')) {
+    return path.resolve(candidate);
+  }
+  return null;
+}
+
+function getModelCandidates() {
+  const preferredModels = parseListEnv(process.env.TTS_MODEL_PREFERENCES);
+  const localDir = (process.env.TTS_MODEL_DIR || '').trim();
+  if (localDir) {
+    preferredModels.unshift(localDir);
+  }
+  const defaultModels = [
+    'Xenova/vits-multilingual-mini',
+    'Xenova/vits-multilingual',
+    'Xenova/tts_en'
+  ];
+  const combined = [...preferredModels, ...defaultModels];
+  const seen = new Set();
+  return combined.filter((entry) => {
+    if (!entry) {
+      return false;
+    }
+    const key = entry.toLowerCase();
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function getMirrorCandidates() {
+  const mirrors = parseListEnv(process.env.TTS_MODEL_MIRRORS);
+  const disableDefault = String(process.env.TTS_DISABLE_HF || '').toLowerCase() === 'true';
+  if (!disableDefault) {
+    mirrors.push('https://hf-mirror.com');
+    mirrors.push('default');
+  }
+  const seen = new Set();
+  const filtered = mirrors
+    .map((entry) => entry.trim())
+    .filter((entry) => {
+      if (!entry) {
+        return false;
+      }
+      const key = entry.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  return { list: filtered, disableDefault };
+}
+
+function configureMirrors() {
+  if (mirrorsConfigured) {
+    return;
+  }
+  mirrorsConfigured = true;
+  const raw = parseListEnv(process.env.TTS_MODEL_MIRRORS);
+  if (raw.length && !process.env.HF_ENDPOINT) {
+    // use the first mirror as the default huggingface endpoint when loading models
+    process.env.HF_ENDPOINT = raw[0];
+  }
+}
 async function ensurePipeline() {
   if (ttsPipelinePromise) {
     return ttsPipelinePromise;
   }
   configureProxy();
   configureAuth();
+  configureMirrors();
   let lastError = null;
-  for (const model of MODEL_CANDIDATES) {
-    try {
-      const pipeline = await getPipelineFunction();
-      ttsPipelinePromise = pipeline('text-to-speech', model, { quantized: true });
-      const instance = await ttsPipelinePromise;
-      return instance;
-    } catch (error) {
-      lastError = error;
-      ttsPipelinePromise = null;
+  const pipeline = await getPipelineFunction();
+  const models = getModelCandidates();
+  const { list: mirrors, disableDefault } = getMirrorCandidates();
+  const mirrorSequence = mirrors.length
+    ? mirrors
+    : disableDefault
+      ? [null]
+      : ['default'];
+  for (const mirror of mirrorSequence) {
+    const restoreEndpoint = process.env.HF_ENDPOINT;
+    if (mirror === 'default') {
+      delete process.env.HF_ENDPOINT;
+    } else if (typeof mirror === 'string' && mirror) {
+      process.env.HF_ENDPOINT = mirror;
+    } else {
+      delete process.env.HF_ENDPOINT;
+    }
+    for (const candidate of models) {
+      const localPath = normalizeLocalPath(candidate);
+      if (localPath) {
+        try {
+          fs.accessSync(localPath, fs.constants.R_OK);
+        } catch (error) {
+          console.warn('Skipping inaccessible local TTS model path', localPath, error?.message || error);
+          continue;
+        }
+      }
+      if (!localPath && mirror === null && disableDefault) {
+        console.warn('Skipping remote TTS model', candidate, 'because TTS_DISABLE_HF is enabled.');
+        continue;
+      }
+      try {
+        const resolvedModel = localPath || candidate;
+        const options = { quantized: true };
+        if (localPath) {
+          options.localFilesOnly = true;
+        }
+        ttsPipelinePromise = pipeline('text-to-speech', resolvedModel, options);
+        const instance = await ttsPipelinePromise;
+        if (typeof mirror === 'string' && mirror && mirror !== 'default') {
+          process.env.HF_ENDPOINT = restoreEndpoint;
+        }
+        return instance;
+      } catch (error) {
+        lastError = error;
+        ttsPipelinePromise = null;
+      }
+    }
+    if (typeof mirror === 'string' && mirror && mirror !== 'default') {
+      if (restoreEndpoint) {
+        process.env.HF_ENDPOINT = restoreEndpoint;
+      } else {
+        delete process.env.HF_ENDPOINT;
+      }
+    } else if (restoreEndpoint) {
+      process.env.HF_ENDPOINT = restoreEndpoint;
     }
   }
   const failure = new Error(lastError?.message || 'Failed to load text-to-speech model');
