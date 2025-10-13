@@ -368,7 +368,8 @@ const state = {
   exportModal: null,
   jobLogViewer: null,
   floatingAssistantOpen: false,
-  ttsAuthPrompt: null
+  ttsAuthPrompt: null,
+  settingsMenuOpen: false
 };
 
 let reportedLocale = null;
@@ -953,6 +954,7 @@ function getClassificationEmoji(key) {
 }
 
 function setActivePage(page) {
+  state.settingsMenuOpen = false;
   state.activePage = page;
   if (page !== 'collection') {
     state.directoryEditor = null;
@@ -2453,6 +2455,7 @@ function switchLocale(locale) {
     return;
   }
   state.locale = locale;
+  state.settingsMenuOpen = false;
   renderApp();
   if (window.api?.notifyLocaleChanged && reportedLocale !== state.locale) {
     window.api.notifyLocaleChanged(state.locale);
@@ -2475,53 +2478,8 @@ if (window.api?.onMenuCommand) {
   });
 }
 
-function renderTopBar(pack) {
-  const actions = createElement('div', { className: 'action-group' });
-  const monitorButton = createElement('button', {
-    className: `pill-button${state.activePage === 'monitor' ? ' active' : ''}`,
-    text: `🛠️ ${pack.actionBar.toggleMonitor}`
-  });
-  monitorButton.type = 'button';
-  monitorButton.addEventListener('click', () => setActivePage('monitor'));
-
-  const settingsButton = createElement('button', {
-    className: `pill-button${state.activePage === 'settings' ? ' active' : ''}`,
-    text: `⚙️ ${pack.actionBar.openSettings}`
-  });
-  settingsButton.type = 'button';
-  settingsButton.addEventListener('click', () => setActivePage('settings'));
-
-  const toggle = createElement('div', {
-    className: 'language-toggle',
-    attributes: { role: 'group', 'aria-label': pack.localeLabel }
-  });
-  toggle.appendChild(createElement('span', { text: pack.localeLabel }));
-
-  const englishButton = createElement('button', {
-    text: 'English',
-    className: state.locale === 'en' ? 'active' : ''
-  });
-  englishButton.type = 'button';
-  englishButton.addEventListener('click', () => switchLocale('en'));
-
-  const chineseButton = createElement('button', {
-    text: '中文',
-    className: state.locale === 'zh' ? 'active' : ''
-  });
-  chineseButton.type = 'button';
-  chineseButton.addEventListener('click', () => switchLocale('zh'));
-
-  toggle.appendChild(englishButton);
-  toggle.appendChild(chineseButton);
-
-  actions.appendChild(monitorButton);
-  actions.appendChild(settingsButton);
-  actions.appendChild(toggle);
-
-  return createElement('header', {
-    className: 'top-bar',
-    children: [actions]
-  });
+function renderTopBar() {
+  return null;
 }
 
 function renderBreadcrumbs(pack) {
@@ -2529,7 +2487,8 @@ function renderBreadcrumbs(pack) {
     className: 'breadcrumbs breadcrumb-bar',
     attributes: { 'aria-label': state.locale === 'zh' ? '页面导航' : 'Page navigation' }
   });
-  const list = createElement('ol');
+  const inner = createElement('div', { className: 'breadcrumb-inner' });
+  const list = createElement('ol', { className: 'breadcrumb-trail' });
   const items = [
     {
       id: 'dashboard',
@@ -2578,7 +2537,96 @@ function renderBreadcrumbs(pack) {
     list.appendChild(entry);
   });
 
-  nav.appendChild(list);
+  inner.appendChild(list);
+
+  const actions = createElement('div', { className: 'breadcrumb-actions' });
+  const toggleButton = createElement('button', {
+    className: `settings-toggle${state.settingsMenuOpen ? ' active' : ''}`,
+    text: '⚙️'
+  });
+  toggleButton.type = 'button';
+  toggleButton.setAttribute(
+    'aria-label',
+    state.locale === 'zh' ? '打开设置菜单' : 'Open settings menu'
+  );
+  toggleButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    state.settingsMenuOpen = !state.settingsMenuOpen;
+    renderApp();
+  });
+  actions.appendChild(toggleButton);
+
+  if (state.settingsMenuOpen) {
+    const menu = createElement('div', { className: 'settings-menu' });
+    menu.addEventListener('click', (event) => event.stopPropagation());
+
+    const monitorButton = createElement('button', {
+      className: 'settings-menu-item',
+      text: `🛠️ ${pack.actionBar.toggleMonitor}`
+    });
+    monitorButton.type = 'button';
+    monitorButton.addEventListener('click', () => setActivePage('monitor'));
+    menu.appendChild(monitorButton);
+
+    const settingsButton = createElement('button', {
+      className: 'settings-menu-item',
+      text: `⚙️ ${pack.actionBar.openSettings}`
+    });
+    settingsButton.type = 'button';
+    settingsButton.addEventListener('click', () => setActivePage('settings'));
+    menu.appendChild(settingsButton);
+
+    const languageGroup = createElement('div', { className: 'settings-menu-group' });
+    languageGroup.appendChild(
+      createElement('span', {
+        className: 'settings-menu-label',
+        text: `🌐 ${pack.localeLabel}`
+      })
+    );
+    const languageOptions = createElement('div', { className: 'settings-menu-options' });
+
+    const englishButton = createElement('button', {
+      className: `settings-menu-option${state.locale === 'en' ? ' active' : ''}`,
+      text: 'English'
+    });
+    englishButton.type = 'button';
+    englishButton.addEventListener('click', () => switchLocale('en'));
+
+    const chineseButton = createElement('button', {
+      className: `settings-menu-option${state.locale === 'zh' ? ' active' : ''}`,
+      text: '中文'
+    });
+    chineseButton.type = 'button';
+    chineseButton.addEventListener('click', () => switchLocale('zh'));
+
+    languageOptions.appendChild(englishButton);
+    languageOptions.appendChild(chineseButton);
+    languageGroup.appendChild(languageOptions);
+    menu.appendChild(languageGroup);
+
+    actions.appendChild(menu);
+
+    setTimeout(() => {
+      if (typeof document === 'undefined') {
+        return;
+      }
+      const handleClickOutside = (event) => {
+        const menuElement = document.querySelector('.settings-menu');
+        if (!menuElement) {
+          return;
+        }
+        if (menuElement.contains(event.target) || toggleButton.contains(event.target)) {
+          return;
+        }
+        state.settingsMenuOpen = false;
+        renderApp();
+      };
+      document.addEventListener('click', handleClickOutside, { once: true });
+    }, 0);
+  }
+
+  inner.appendChild(actions);
+  nav.appendChild(inner);
   return nav;
 }
 
@@ -6191,7 +6239,10 @@ function renderApp() {
   syncFullscreenClass();
   root.innerHTML = '';
   const appShell = createElement('div', { className: 'app-shell' });
-  appShell.appendChild(renderTopBar(pack));
+  const topBar = renderTopBar(pack);
+  if (topBar) {
+    appShell.appendChild(topBar);
+  }
 
   const breadcrumbBar = renderBreadcrumbs(pack);
   if (state.activePage === 'dashboard') {
