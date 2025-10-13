@@ -928,7 +928,14 @@ ipcMain.handle('tts:list-voices', async () => {
     return { success: true, voices };
   } catch (error) {
     console.error('Failed to enumerate TTS voices', error);
-    return { success: false, error: error?.message || 'unavailable' };
+    const code = error?.code === 'HUGGINGFACE_AUTH' || error?.message === 'huggingface-auth'
+      ? 'huggingface-auth'
+      : undefined;
+    return {
+      success: false,
+      error: code || error?.message || 'unavailable',
+      code
+    };
   }
 });
 
@@ -942,6 +949,9 @@ ipcMain.handle('tts:synthesize', async (_event, options = {}) => {
     }
     if (error?.message === 'empty') {
       return { success: false, error: 'empty' };
+    }
+    if (error?.code === 'HUGGINGFACE_AUTH' || error?.message === 'huggingface-auth') {
+      return { success: false, error: 'huggingface-auth', code: 'huggingface-auth' };
     }
     console.error('Failed to synthesize speech', error);
     return { success: false, error: error?.message || 'unavailable' };

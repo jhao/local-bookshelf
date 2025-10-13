@@ -324,8 +324,15 @@ const ttsEngine = {
   audioContext: null,
   source: null,
   requestId: 0,
-  error: null
+  errorMessage: null,
+  errorCode: null,
+  errorDetail: null,
+  authAttempts: 0,
+  authError: false,
+  authLocked: false
 };
+
+const MAX_TTS_AUTH_ATTEMPTS = 3;
 
 const state = {
   locale: defaultLocale,
@@ -359,7 +366,8 @@ const state = {
   metadataEditor: null,
   exportModal: null,
   jobLogViewer: null,
-  floatingAssistantOpen: false
+  floatingAssistantOpen: false,
+  ttsAuthPrompt: null
 };
 
 let reportedLocale = null;
@@ -4027,12 +4035,84 @@ function getNarrationText(book) {
   return trimPreviewText(getBookSummaryText(book));
 }
 
-async function initializeTtsEngine() {
-  if (!ttsEngine.supported || ttsEngine.initializing || ttsEngine.initialized) {
+function openHuggingFacePortal() {
+  try {
+    window.open('https://huggingface.co', '_blank', 'noopener');
+  } catch (error) {
+    console.warn('Unable to open huggingface.co', error);
+  }
+}
+
+function showTtsAuthPrompt(status = 'auth', detail = '') {
+  const normalizedStatus = ttsEngine.authLocked ? 'locked' : status;
+  state.ttsAuthPrompt = {
+    status: normalizedStatus,
+    detail: detail || ttsEngine.errorDetail || '',
+    attempts: ttsEngine.authAttempts
+  };
+  renderApp();
+}
+
+function hideTtsAuthPrompt() {
+  state.ttsAuthPrompt = null;
+  renderApp();
+}
+
+function handleTtsAuthFailure(detail) {
+  ttsEngine.errorCode = 'huggingface-auth';
+  ttsEngine.errorDetail = detail || '';
+  ttsEngine.errorMessage = null;
+  ttsEngine.authError = true;
+  ttsEngine.initialized = false;
+  if (!Array.isArray(ttsEngine.voices)) {
+    ttsEngine.voices = [];
+  }
+  if (typeof ttsEngine.authAttempts !== 'number') {
+    ttsEngine.authAttempts = 0;
+  }
+  ttsEngine.authAttempts += 1;
+  if (ttsEngine.authAttempts >= MAX_TTS_AUTH_ATTEMPTS) {
+    ttsEngine.authLocked = true;
+    showTtsAuthPrompt('locked', detail);
+  } else {
+    showTtsAuthPrompt('auth', detail);
+  }
+}
+
+function retryTtsInitialization() {
+  if (ttsEngine.authLocked) {
+    showTtsAuthPrompt('locked');
+    return;
+  }
+  ttsEngine.authError = false;
+  ttsEngine.errorCode = null;
+  ttsEngine.errorDetail = null;
+  ttsEngine.errorMessage = null;
+  ttsEngine.initialized = false;
+  state.ttsAuthPrompt = null;
+  renderApp();
+  initializeTtsEngine(true);
+}
+
+async function initializeTtsEngine(force = false) {
+  if (!ttsEngine.supported || ttsEngine.initializing) {
+    return;
+  }
+  if (ttsEngine.authLocked) {
+    return;
+  }
+  if (ttsEngine.authError && !force) {
+    return;
+  }
+  if (ttsEngine.initialized && !force) {
     return;
   }
   ttsEngine.initializing = true;
-  ttsEngine.error = null;
+  if (force) {
+    ttsEngine.errorMessage = null;
+    ttsEngine.errorCode = null;
+    ttsEngine.errorDetail = null;
+  }
   try {
     const response = await window.api.ttsListVoices();
     if (response?.success && Array.isArray(response.voices)) {
@@ -4048,12 +4128,32 @@ async function initializeTtsEngine() {
         state.ttsState.voice = ttsEngine.voices[0].id;
       }
       ttsEngine.initialized = true;
+      ttsEngine.errorMessage = null;
+      ttsEngine.errorCode = null;
+      ttsEngine.errorDetail = null;
+      ttsEngine.authError = false;
+      ttsEngine.authLocked = false;
+      ttsEngine.authAttempts = 0;
+      if (state.ttsAuthPrompt) {
+        state.ttsAuthPrompt = null;
+      }
+    } else if (response?.code === 'huggingface-auth') {
+      const detail = response?.error && response.error !== 'huggingface-auth' ? response.error : '';
+      handleTtsAuthFailure(detail);
     } else {
-      ttsEngine.error = response?.error || 'unavailable';
+      ttsEngine.errorMessage = response?.error || 'unavailable';
+      ttsEngine.errorCode = null;
     }
   } catch (error) {
     console.warn('Failed to initialize TTS engine', error);
-    ttsEngine.error = error?.message || 'unavailable';
+    const code = error?.code || error?.message;
+    if (code === 'huggingface-auth' || code === 'HUGGINGFACE_AUTH') {
+      const detail = error?.message && error.message !== 'huggingface-auth' ? error.message : '';
+      handleTtsAuthFailure(detail);
+    } else {
+      ttsEngine.errorMessage = error?.message || 'unavailable';
+      ttsEngine.errorCode = null;
+    }
   } finally {
     ttsEngine.initializing = false;
     renderApp();
@@ -4112,6 +4212,10 @@ function startTts(pack, book) {
     showToast(pack.ttsPanel.unsupported);
     return;
   }
+  if (ttsEngine.authLocked || ttsEngine.authError || ttsEngine.errorCode === 'huggingface-auth') {
+    showTtsAuthPrompt(ttsEngine.authLocked ? 'locked' : 'auth');
+    return;
+  }
   initializeTtsEngine();
   if (ttsEngine.initializing) {
     showToast(pack.ttsPanel.initializing);
@@ -4148,6 +4252,11 @@ function startTts(pack, book) {
         return;
       }
       if (!response?.success) {
+        if (response?.code === 'huggingface-auth') {
+          const failure = new Error(response?.error || 'huggingface-auth');
+          failure.code = 'huggingface-auth';
+          throw failure;
+        }
         throw response?.error || new Error('unavailable');
       }
       const arrayBuffer = base64ToArrayBuffer(response.audio);
@@ -4203,6 +4312,14 @@ function startTts(pack, book) {
       state.ttsState.playing = false;
       state.ttsState.status = 'idle';
       const code = typeof error === 'string' ? error : error?.code || error?.message;
+      if (code === 'huggingface-auth' || code === 'HUGGINGFACE_AUTH') {
+        const detail =
+          typeof error === 'object' && error?.message && error.message !== 'huggingface-auth'
+            ? error.message
+            : '';
+        handleTtsAuthFailure(detail);
+        return;
+      }
       if (code === 'busy') {
         showToast(pack.ttsPanel.busy);
       } else if (code === 'empty') {
@@ -4319,24 +4436,37 @@ function renderTtsPanel(pack, book) {
   initializeTtsEngine();
   const controls = createElement('div', { className: 'tts-controls' });
   const supported = ttsEngine.supported;
-  const hasError = !!ttsEngine.error;
+  const hasAuthIssue =
+    ttsEngine.authLocked || ttsEngine.errorCode === 'huggingface-auth' || ttsEngine.authError;
+  const hasError = !!ttsEngine.errorMessage && !hasAuthIssue;
   const initializing = ttsEngine.initializing;
   const isPlaying = state.ttsState.playing;
   const isGenerating = state.ttsState.status === 'generating';
-  const disabled = !supported || initializing || hasError;
+  const controlsDisabled = !supported || initializing || hasError || hasAuthIssue;
   const buttonLabel = isPlaying ? pack.ttsPanel.stop : pack.ttsPanel.play;
+  const unavailableLabel = pack.ttsPanel.unavailableLabel || 'Unavailable';
   const playButton = createElement('button', { text: isGenerating ? pack.ttsPanel.stop : buttonLabel });
   playButton.type = 'button';
-  playButton.disabled = disabled && !isPlaying && !isGenerating;
+  if (hasAuthIssue && !isPlaying && !isGenerating) {
+    playButton.textContent = unavailableLabel;
+    playButton.classList.add('tts-unavailable-button');
+    playButton.disabled = false;
+  } else {
+    playButton.disabled = controlsDisabled && !isPlaying && !isGenerating;
+  }
   playButton.addEventListener('click', () => {
     if (state.ttsState.playing || state.ttsState.status === 'generating') {
       stopTts();
     } else {
+      if (hasAuthIssue) {
+        showTtsAuthPrompt(ttsEngine.authLocked ? 'locked' : 'auth');
+        return;
+      }
       startTts(pack, book);
     }
   });
   const speedSelect = createElement('select', { className: 'tts-select' });
-  speedSelect.disabled = disabled || isGenerating;
+  speedSelect.disabled = controlsDisabled || isGenerating;
   [0.5, 0.75, 1, 1.25, 1.5, 2].forEach((value) => {
     const label = `${value}×`;
     const option = createElement('option', { text: label });
@@ -4360,7 +4490,7 @@ function renderTtsPanel(pack, book) {
   });
   const voiceSelect = createElement('select', { className: 'tts-select' });
   const hasVoices = ttsEngine.voices.length > 0;
-  voiceSelect.disabled = disabled || !hasVoices || isGenerating;
+  voiceSelect.disabled = controlsDisabled || !hasVoices || isGenerating;
   if (hasVoices) {
     ttsEngine.voices.forEach((voice) => {
       const languageLabel =
@@ -4390,6 +4520,7 @@ function renderTtsPanel(pack, book) {
   const highlightToggle = createElement('label', { className: 'highlight-toggle' });
   const highlightInput = createElement('input', { attributes: { type: 'checkbox' } });
   highlightInput.checked = state.ttsState.highlight;
+  highlightInput.disabled = controlsDisabled;
   highlightInput.addEventListener('change', (event) => {
     state.ttsState.highlight = event.target.checked;
     renderApp();
@@ -4405,8 +4536,27 @@ function renderTtsPanel(pack, book) {
   container.appendChild(controls);
   if (!supported) {
     container.appendChild(createElement('p', { className: 'tts-warning', text: pack.ttsPanel.unsupported }));
+  } else if (hasAuthIssue) {
+    const warningText = ttsEngine.authLocked
+      ? pack.ttsPanel.authLockedWarning
+      : pack.ttsPanel.authWarning;
+    if (warningText) {
+      container.appendChild(createElement('p', { className: 'tts-warning', text: warningText }));
+    }
+    if (!ttsEngine.authLocked && typeof pack.ttsPanel.authAttempts === 'string') {
+      const remaining = Math.max(0, MAX_TTS_AUTH_ATTEMPTS - (ttsEngine.authAttempts || 0));
+      container.appendChild(
+        createElement('p', {
+          className: 'tts-helper',
+          text: pack.ttsPanel.authAttempts.replace('{count}', remaining)
+        })
+      );
+    }
+    if (ttsEngine.errorDetail) {
+      container.appendChild(createElement('p', { className: 'tts-helper', text: ttsEngine.errorDetail }));
+    }
   } else if (hasError) {
-    const detail = ttsEngine.error ? ` (${ttsEngine.error})` : '';
+    const detail = ttsEngine.errorMessage ? ` (${ttsEngine.errorMessage})` : '';
     container.appendChild(createElement('p', { className: 'tts-warning', text: `${pack.ttsPanel.error}${detail}` }));
   } else if (initializing) {
     container.appendChild(createElement('p', { className: 'tts-helper', text: pack.ttsPanel.initializing }));
@@ -4418,6 +4568,103 @@ function renderTtsPanel(pack, book) {
     container.appendChild(createElement('p', { className: 'tts-helper', text: pack.ttsPanel.loading }));
   }
   return container;
+}
+
+
+function renderTtsAuthPrompt(pack) {
+  if (!state.ttsAuthPrompt) {
+    return null;
+  }
+  const prompt = state.ttsAuthPrompt;
+  const status = prompt.status || 'auth';
+  const detail = prompt.detail || ttsEngine.errorDetail || '';
+  const overlay = createElement('div', { className: 'modal-overlay tts-auth-overlay' });
+  const panel = createElement('div', { className: 'modal-panel tts-auth-modal' });
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  const isLocked = status === 'locked' || ttsEngine.authLocked;
+  const title = isLocked
+    ? pack.ttsPanel.authFailedTitle || pack.ttsPanel.authWarning
+    : pack.ttsPanel.authRequiredTitle || pack.ttsPanel.authWarning;
+  if (title) {
+    panel.appendChild(createElement('h3', { text: title }));
+  }
+  const message = isLocked
+    ? pack.ttsPanel.authFailedMessage
+    : pack.ttsPanel.authRequiredMessage;
+  if (message) {
+    panel.appendChild(createElement('p', { className: 'tts-auth-message', text: message }));
+  }
+  if (!isLocked) {
+    const steps = Array.isArray(pack.ttsPanel.authSteps) ? pack.ttsPanel.authSteps : [];
+    if (steps.length) {
+      const stepList = createElement('ol', { className: 'tts-auth-steps' });
+      steps.forEach((step) => {
+        stepList.appendChild(createElement('li', { text: step }));
+      });
+      panel.appendChild(stepList);
+    }
+    if (typeof pack.ttsPanel.authAttempts === 'string') {
+      const remaining = Math.max(0, MAX_TTS_AUTH_ATTEMPTS - (prompt.attempts || 0));
+      panel.appendChild(
+        createElement('p', {
+          className: 'tts-auth-message subtle',
+          text: pack.ttsPanel.authAttempts.replace('{count}', remaining)
+        })
+      );
+    }
+  }
+  if (detail) {
+    panel.appendChild(createElement('p', { className: 'tts-auth-message subtle', text: detail }));
+  }
+  const actions = createElement('div', { className: 'modal-actions tts-auth-actions' });
+  const openButton = createElement('button', {
+    className: 'ghost-button',
+    text: pack.ttsPanel.authOpen || 'Open huggingface.co'
+  });
+  openButton.type = 'button';
+  openButton.addEventListener('click', () => {
+    openHuggingFacePortal();
+  });
+  actions.appendChild(openButton);
+  if (!isLocked) {
+    const retryButton = createElement('button', {
+      className: 'primary-button',
+      text: pack.ttsPanel.authRetry || 'Retry'
+    });
+    retryButton.type = 'button';
+    retryButton.addEventListener('click', () => {
+      retryTtsInitialization();
+    });
+    actions.appendChild(retryButton);
+    const cancelButton = createElement('button', {
+      className: 'ghost-button',
+      text: pack.ttsPanel.authCancel || 'Later'
+    });
+    cancelButton.type = 'button';
+    cancelButton.addEventListener('click', () => {
+      hideTtsAuthPrompt();
+    });
+    actions.appendChild(cancelButton);
+  } else {
+    const closeButton = createElement('button', {
+      className: 'ghost-button',
+      text: pack.ttsPanel.authClose || pack.ttsPanel.authCancel || 'Close'
+    });
+    closeButton.type = 'button';
+    closeButton.addEventListener('click', () => {
+      hideTtsAuthPrompt();
+    });
+    actions.appendChild(closeButton);
+  }
+  panel.appendChild(actions);
+  overlay.appendChild(panel);
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      hideTtsAuthPrompt();
+    }
+  });
+  return overlay;
 }
 
 
@@ -5958,6 +6205,10 @@ function renderApp() {
   const floatingAssistant = renderFloatingAssistant(pack);
   if (floatingAssistant) {
     root.appendChild(floatingAssistant);
+  }
+  const ttsAuthPrompt = renderTtsAuthPrompt(pack);
+  if (ttsAuthPrompt) {
+    root.appendChild(ttsAuthPrompt);
   }
   const toast = renderToast();
   if (toast) {

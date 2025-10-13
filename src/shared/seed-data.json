@@ -338,7 +338,24 @@
         "initializing": "Loading local voice model…",
         "generating": "Synthesizing speech…",
         "generatingMessage": "Voice synthesis in progress…",
-        "busy": "Voice engine is busy. Please try again shortly."
+        "busy": "Voice engine is busy. Please try again shortly.",
+        "unavailableLabel": "Feature unavailable",
+        "authRequiredTitle": "Hugging Face authentication needed",
+        "authRequiredMessage": "Local narration downloads voice models from huggingface.co. Please sign in and authenticate before retrying.",
+        "authSteps": [
+          "Sign in to your Hugging Face account.",
+          "Generate a read token from https://huggingface.co/settings/tokens.",
+          "Add the token to the HF_TOKEN (or HF_HUB_TOKEN) environment variable, then restart the voice initialization."
+        ],
+        "authOpen": "Open huggingface.co",
+        "authRetry": "I've completed authentication",
+        "authCancel": "Maybe later",
+        "authClose": "Close",
+        "authAttempts": "Remaining retries: {count}",
+        "authWarning": "Complete Hugging Face authentication to enable voice narration.",
+        "authFailedTitle": "Voice features are unavailable",
+        "authFailedMessage": "We still can't access Hugging Face after three attempts. Voice narration is disabled until authentication succeeds.",
+        "authLockedWarning": "Voice narration is disabled. Update your Hugging Face credentials and retry later."
       },
       "exportDialog": {
         "title": "Export selection",
@@ -742,7 +759,24 @@
         "initializing": "正在加载本地语音模型…",
         "generating": "正在合成语音…",
         "generatingMessage": "语音合成进行中…",
-        "busy": "语音引擎正忙，请稍后重试。"
+        "busy": "语音引擎正忙，请稍后重试。",
+        "unavailableLabel": "功能不可用",
+        "authRequiredTitle": "需要 Hugging Face 认证",
+        "authRequiredMessage": "语音引擎需要访问 huggingface.co，请先登录并完成认证后再试。",
+        "authSteps": [
+          "登录你的 Hugging Face 账号。",
+          "在 https://huggingface.co/settings/tokens 页面创建读取权限的访问令牌。",
+          "将令牌配置到 HF_TOKEN（或 HF_HUB_TOKEN）环境变量，然后重新加载语音模型。"
+        ],
+        "authOpen": "打开 huggingface.co",
+        "authRetry": "已完成认证，重新尝试",
+        "authCancel": "稍后再说",
+        "authClose": "关闭",
+        "authAttempts": "剩余重试次数：{count}",
+        "authWarning": "完成 Hugging Face 认证后才能启用语音朗读功能。",
+        "authFailedTitle": "语音功能暂时不可用",
+        "authFailedMessage": "已连续三次无法访问 Hugging Face，语音功能已停用，请完成认证后再试。",
+        "authLockedWarning": "语音功能已停用，请更新 Hugging Face 认证信息后再尝试。"
       },
       "exportDialog": {
         "title": "导出选中图书",
