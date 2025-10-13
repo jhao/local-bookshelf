@@ -11,6 +11,22 @@ let proxyConfigured = false;
 let authConfigured = false;
 let mirrorsConfigured = false;
 
+const TOKEN_ENV_KEYS = [
+  'HF_TOKEN',
+  'HF_HUB_TOKEN',
+  'HF_API_TOKEN',
+  'HUGGING_FACE_TOKEN',
+  'HUGGINGFACE_TOKEN',
+  'HUGGINGFACE_API_TOKEN',
+  'HUGGING_FACE_HUB_TOKEN',
+  'HUGGINGFACEHUB_TOKEN',
+  'HUGGINGFACEHUB_API_TOKEN'
+];
+
+let huggingFaceToken = null;
+let huggingFaceTokenInitialized = false;
+let originalFetch = null;
+
 function isHuggingFaceUnauthorized(error) {
   if (!error) {
     return false;
@@ -25,19 +41,8 @@ function isHuggingFaceUnauthorized(error) {
   return message.includes('unauthorized access to file') || message.includes('401');
 }
 
-function getHuggingFaceToken() {
-  const candidates = [
-    'HF_TOKEN',
-    'HF_HUB_TOKEN',
-    'HF_API_TOKEN',
-    'HUGGING_FACE_TOKEN',
-    'HUGGINGFACE_TOKEN',
-    'HUGGINGFACE_API_TOKEN',
-    'HUGGING_FACE_HUB_TOKEN',
-    'HUGGINGFACEHUB_TOKEN',
-    'HUGGINGFACEHUB_API_TOKEN'
-  ];
-  for (const key of candidates) {
+function getTokenFromEnv() {
+  for (const key of TOKEN_ENV_KEYS) {
     const value = process.env[key];
     if (typeof value === 'string' && value.trim()) {
       return value.trim();
@@ -46,16 +51,30 @@ function getHuggingFaceToken() {
   return null;
 }
 
+function applyTokenToEnv(token) {
+  TOKEN_ENV_KEYS.forEach((key) => {
+    if (token) {
+      process.env[key] = token;
+    } else {
+      delete process.env[key];
+    }
+  });
+}
+
+function resolveHuggingFaceToken() {
+  if (!huggingFaceTokenInitialized) {
+    huggingFaceToken = getTokenFromEnv();
+    huggingFaceTokenInitialized = true;
+  }
+  return huggingFaceToken;
+}
+
 function configureAuth() {
   if (authConfigured) {
     return;
   }
-  const token = getHuggingFaceToken();
-  if (!token) {
-    return;
-  }
-  const originalFetch = globalThis.fetch;
-  if (typeof originalFetch !== 'function') {
+  const fetchReference = globalThis.fetch;
+  if (typeof fetchReference !== 'function') {
     return;
   }
   const RequestConstructor = typeof globalThis.Request === 'function' ? globalThis.Request : null;
@@ -63,6 +82,7 @@ function configureAuth() {
   if (!RequestConstructor || !HeadersConstructor) {
     return;
   }
+  originalFetch = fetchReference;
   authConfigured = true;
   globalThis.fetch = async (input, init = {}) => {
     try {
@@ -78,7 +98,8 @@ function configureAuth() {
         const headers = new HeadersConstructor(
           init.headers || (typeof input === 'object' && input ? input.headers : undefined)
         );
-        if (!headers.has('authorization') && !headers.has('Authorization')) {
+        const token = resolveHuggingFaceToken();
+        if (token && !headers.has('authorization') && !headers.has('Authorization')) {
           headers.set('Authorization', `Bearer ${token}`);
         }
         if (typeof input === 'string') {
@@ -408,7 +429,16 @@ async function synthesize(text, { voice } = {}) {
   }
 }
 
+function setHuggingFaceToken(token) {
+  const normalized = typeof token === 'string' ? token.trim() : '';
+  huggingFaceToken = normalized ? normalized : null;
+  huggingFaceTokenInitialized = true;
+  applyTokenToEnv(huggingFaceToken);
+  configureAuth();
+}
+
 module.exports = {
   listVoices,
-  synthesize
+  synthesize,
+  setHuggingFaceToken
 };

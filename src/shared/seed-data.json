@@ -345,7 +345,7 @@
         "authSteps": [
           "Sign in to your Hugging Face account.",
           "Generate a read token from https://huggingface.co/settings/tokens.",
-          "Add the token to the HF_TOKEN (or HF_HUB_TOKEN) environment variable, then restart the voice initialization."
+          "Paste the token into the Hugging Face token field under Settings, then retry voice initialization."
         ],
         "authOpen": "Open huggingface.co",
         "authRetry": "I've completed authentication",
@@ -392,6 +392,8 @@
         "apiKey": "API key",
         "rateLimit": "Rate limit (req/min)",
         "proxy": "Proxy URL",
+        "huggingFaceToken": "Hugging Face token",
+        "huggingFaceHelper": "The token is stored locally and applied to Hugging Face downloads.",
         "aiSectionTitle": "AI assistant",
         "aiProvider": "Model provider",
         "aiEndpoint": "API endpoint",
@@ -766,7 +768,7 @@
         "authSteps": [
           "登录你的 Hugging Face 账号。",
           "在 https://huggingface.co/settings/tokens 页面创建读取权限的访问令牌。",
-          "将令牌配置到 HF_TOKEN（或 HF_HUB_TOKEN）环境变量，然后重新加载语音模型。"
+          "在设置页面的 Hugging Face 令牌输入框中粘贴该令牌，然后重新尝试初始化语音。"
         ],
         "authOpen": "打开 huggingface.co",
         "authRetry": "已完成认证，重新尝试",
@@ -813,6 +815,8 @@
         "apiKey": "API 密钥",
         "rateLimit": "速率限制（次/分钟）",
         "proxy": "代理地址",
+        "huggingFaceToken": "Hugging Face 令牌",
+        "huggingFaceHelper": "令牌仅保存在本地，用于访问 Hugging Face 语音模型。",
         "aiSectionTitle": "AI 大模型接口",
         "aiProvider": "服务提供方",
         "aiEndpoint": "接口地址",
@@ -1337,6 +1341,7 @@
     "apiKey": "",
     "rateLimit": 60,
     "proxy": "",
+    "huggingFaceToken": "",
     "cachePath": "~/Library/Application Support/LocalBookshelf/covers",
     "previewPath": "~/Library/Application Support/LocalBookshelf/previews",
     "embeddingsPath": "~/Library/Application Support/LocalBookshelf/embeddings",

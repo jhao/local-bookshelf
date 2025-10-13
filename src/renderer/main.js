@@ -191,6 +191,7 @@ const defaultSettingsFallback = {
   apiKey: '',
   rateLimit: 60,
   proxy: '',
+  huggingFaceToken: '',
   cachePath: '~/Library Application Support/LocalBookshelf/covers',
   previewPath: '~/Library Application Support/LocalBookshelf/previews',
   embeddingsPath: '~/Library Application Support/LocalBookshelf/embeddings',
@@ -637,6 +638,18 @@ function schedulePersist(force = false) {
   }, 350);
 }
 
+async function syncHuggingFaceToken() {
+  if (!window.api?.ttsSetAuthToken) {
+    return;
+  }
+  const token = state?.settings?.huggingFaceToken || '';
+  try {
+    await window.api.ttsSetAuthToken(token);
+  } catch (error) {
+    console.warn('Failed to update Hugging Face token', error);
+  }
+}
+
 async function requestDirectory(defaultPath = '', fallbackPrompt = '') {
   if (window.api?.selectDirectory) {
     try {
@@ -675,6 +688,7 @@ async function initializeApp() {
     console.error('Failed to restore state', error);
   } finally {
     persistence.hydrating = false;
+    await syncHuggingFaceToken();
     initializeTtsEngine();
     renderApp();
     if (window.api?.notifyLocaleChanged) {
@@ -4956,6 +4970,20 @@ function renderSettingsPage(pack) {
   proxy.addEventListener('change', (event) => {
     state.settings.proxy = event.target.value;
   });
+  const huggingFaceTokenInput = createElement('input', {
+    attributes: {
+      type: 'text',
+      value: state.settings.huggingFaceToken || '',
+      placeholder: pack.settings.huggingFaceToken
+    }
+  });
+  huggingFaceTokenInput.addEventListener('change', async (event) => {
+    state.settings.huggingFaceToken = event.target.value;
+    await syncHuggingFaceToken();
+    if (ttsEngine.authError || ttsEngine.errorCode === 'huggingface-auth') {
+      initializeTtsEngine(true);
+    }
+  });
 
   metadataGroup.appendChild(createElement('label', { text: pack.settings.metadataSources }));
   metadataGroup.appendChild(metadataSources);
@@ -4965,6 +4993,15 @@ function renderSettingsPage(pack) {
   metadataGroup.appendChild(rateLimit);
   metadataGroup.appendChild(createElement('label', { text: pack.settings.proxy }));
   metadataGroup.appendChild(proxy);
+  if (pack.settings.huggingFaceToken) {
+    metadataGroup.appendChild(createElement('label', { text: pack.settings.huggingFaceToken }));
+    metadataGroup.appendChild(huggingFaceTokenInput);
+  }
+  if (pack.settings.huggingFaceHelper) {
+    metadataGroup.appendChild(
+      createElement('p', { className: 'settings-helper', text: pack.settings.huggingFaceHelper })
+    );
+  }
 
   const aiHeading = createElement('h4', { className: 'settings-subheading', text: pack.settings.aiSectionTitle });
   metadataGroup.appendChild(aiHeading);
