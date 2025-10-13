@@ -922,6 +922,16 @@ async function extractAzw3Preview(buffer) {
   return '';
 }
 
+ipcMain.handle('tts:set-auth-token', async (_event, token) => {
+  try {
+    tts.setHuggingFaceToken(typeof token === 'string' ? token : '');
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to update Hugging Face token', error);
+    return { success: false, error: error?.message || 'unavailable' };
+  }
+});
+
 ipcMain.handle('tts:list-voices', async () => {
   try {
     const voices = await tts.listVoices();
