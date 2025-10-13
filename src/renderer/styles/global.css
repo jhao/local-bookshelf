@@ -1054,6 +1054,18 @@ body.preview-fullscreen-active {
   gap: 8px;
 }
 
+.preview-controls.foliate-active {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.preview-hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #475569;
+}
+
 .preview-controls button,
 .preview-panel button,
 .ai-conversation button,
@@ -1142,6 +1154,35 @@ body.preview-fullscreen-active {
   padding: 16px;
   min-height: 360px;
   height: clamp(360px, 65vh, 840px);
+}
+
+.preview-foliate-viewer {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  min-height: 320px;
+}
+
+.preview-foliate-viewer foliate-reader,
+.preview-foliate-viewer foliate-viewer,
+.preview-foliate-viewer foliate-view,
+.preview-foliate-viewer .foliate-host {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.preview-foliate-viewer foliate-view {
+  display: flex;
+}
+
+.preview-hint.foliate-bookmark-hint {
+  margin-top: 12px;
 }
 
 .preview-viewer.fullscreen {
