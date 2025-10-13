@@ -112,30 +112,34 @@ body {
   position: sticky;
   top: 0;
   z-index: 200;
-  display: flex;
-  justify-content: center;
   padding: 16px 24px;
   background: rgba(241, 245, 249, 0.92);
   backdrop-filter: blur(12px);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  display: flex;
+  justify-content: center;
 }
 
-.breadcrumbs ol {
+.breadcrumb-inner {
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.breadcrumb-trail {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
+  flex: 1;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.breadcrumb-bar ol {
-  max-width: 1200px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.breadcrumbs button {
+.breadcrumb-trail button {
   padding: 6px 14px;
   border-radius: 999px;
   border: 1px solid #e2e8f0;
@@ -146,15 +150,123 @@ body {
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
-.breadcrumbs button:hover {
+.breadcrumb-trail button:hover {
   background: #e0f2fe;
   border-color: #bae6fd;
 }
 
-.breadcrumbs button.active {
+.breadcrumb-trail button.active {
   background: #38bdf8;
   border-color: #0ea5e9;
   color: #ffffff;
+}
+
+.breadcrumb-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.settings-toggle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid #dbeafe;
+  background: #f8fafc;
+  color: #1f2937;
+  font-size: 1.05rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.settings-toggle:hover,
+.settings-toggle.active {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.28);
+}
+
+.settings-menu {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  min-width: 240px;
+  padding: 18px 20px;
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 220;
+}
+
+.settings-menu-item {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: #f8fafc;
+  color: #1f2937;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.settings-menu-item:hover {
+  background: #eff6ff;
+  border-color: #bae6fd;
+  color: #1d4ed8;
+}
+
+.settings-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.settings-menu-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.settings-menu-options {
+  display: flex;
+  gap: 10px;
+}
+
+.settings-menu-option {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #dbeafe;
+  background: #f1f5f9;
+  color: #1f2937;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.settings-menu-option:hover {
+  background: #e0f2fe;
+  border-color: #bae6fd;
+  color: #1d4ed8;
+}
+
+.settings-menu-option.active {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.32);
 }
 
 .page {
@@ -255,12 +367,13 @@ body {
 }
 
 .collection-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(var(--card-button-min-width), 1fr));
   gap: 8px;
 }
 
 .collection-actions button {
-  flex: 1;
+  min-width: var(--card-button-min-width);
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid #dbeafe;
@@ -269,6 +382,7 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
 }
 
 .collection-actions button:hover {
@@ -461,7 +575,9 @@ body {
   border-radius: 20px;
   border: 1px solid #dbeafe;
   background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
-  min-height: 160px;
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 3 / 4;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -470,13 +586,15 @@ body {
 }
 
 .book-cover.small {
-  min-height: 120px;
+  width: 100%;
+  aspect-ratio: 3 / 4;
 }
 
 .book-cover.avatar {
   width: 160px;
   height: 220px;
   align-self: flex-start;
+  aspect-ratio: auto;
 }
 
 .book-cover img {
@@ -839,11 +957,13 @@ body {
 
 .book-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 20px;
+  justify-items: center;
 }
 
 .book-card {
+  --card-button-min-width: max(8ch, 96px);
   background: #ffffff;
   border-radius: 24px;
   border: 1px solid #e2e8f0;
@@ -854,6 +974,8 @@ body {
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.06);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  min-width: min(calc(var(--card-button-min-width) * 3 + 16px), 100%);
+  width: min(100%, max-content);
 }
 
 .book-card:hover {
