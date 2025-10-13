@@ -589,6 +589,221 @@ async function extractEpubPreview(buffer) {
   return null;
 }
 
+function normalizeXmlValue(value) {
+  if (Array.isArray(value)) {
+    return normalizeXmlValue(value[0]);
+  }
+  if (value && typeof value === 'object') {
+    return (
+      value['#text'] ||
+      value.text ||
+      value._text ||
+      value._ ||
+      value.value ||
+      ''
+    );
+  }
+  return value || '';
+}
+
+function getAttribute(entry, key) {
+  if (!entry) {
+    return '';
+  }
+  return (
+    entry[key] ||
+    entry[`@_${key}`] ||
+    entry[key?.toLowerCase?.()] ||
+    entry[key?.toUpperCase?.()] ||
+    ''
+  );
+}
+
+function resolveOpfHref(rootPath, href = '') {
+  if (!href) {
+    return '';
+  }
+  const base = rootPath.includes('/') ? rootPath.slice(0, rootPath.lastIndexOf('/') + 1) : '';
+  const normalized = path.posix.join(base, href).replace(/^\//, '');
+  return normalized
+    .split('/')
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch (error) {
+        return segment;
+      }
+    })
+    .join('/');
+}
+
+function sanitizeEpubContent(html) {
+  const cleaned = sanitizeHtmlSnippet(html || '');
+  return cleaned.replace(/<img[^>]*>/gi, (match) => {
+    const altMatch = match.match(/alt\s*=\s*"([^"]*)"/i) || match.match(/alt\s*=\s*'([^']*)'/i);
+    const altText = altMatch ? escapeHtml(altMatch[1]) : '';
+    if (altText) {
+      return `<figure class="foliate-image-placeholder">${altText}</figure>`;
+    }
+    return '<figure class="foliate-image-placeholder" aria-hidden="true"></figure>';
+  });
+}
+
+async function extractEpubViewData(buffer) {
+  const result = {
+    metadata: {
+      title: '',
+      creator: '',
+      language: ''
+    },
+    spine: [],
+    styles: []
+  };
+  if (!Buffer.isBuffer(buffer)) {
+    return result;
+  }
+  const zip = await JSZip.loadAsync(buffer);
+  const containerFile = zip.file('META-INF/container.xml');
+  let rootPath = null;
+  if (containerFile) {
+    try {
+      const containerXml = await containerFile.async('text');
+      const container = xmlParser.parse(containerXml);
+      const rootfiles = container?.container?.rootfiles?.rootfile;
+      const entry = Array.isArray(rootfiles) ? rootfiles[0] : rootfiles;
+      rootPath =
+        getAttribute(entry, 'full-path') ||
+        getAttribute(entry, 'fullPath') ||
+        getAttribute(entry, 'Full-Path');
+    } catch (error) {
+      console.warn('Failed to parse EPUB container.xml', error);
+    }
+  }
+  if (!rootPath) {
+    return result;
+  }
+  const opfFile = zip.file(rootPath);
+  if (!opfFile) {
+    return result;
+  }
+  try {
+    const opfXml = await opfFile.async('text');
+    const opf = xmlParser.parse(opfXml);
+    const pkg = opf?.package || {};
+    const metadata = pkg.metadata || {};
+    result.metadata.title = normalizeXmlValue(metadata['dc:title'] || metadata.title).trim();
+    result.metadata.creator = normalizeXmlValue(metadata['dc:creator'] || metadata.creator).trim();
+    result.metadata.language = (normalizeXmlValue(metadata['dc:language'] || metadata.language) || 'en').trim();
+
+    const manifestRaw = pkg?.manifest?.item;
+    const spineRaw = pkg?.spine?.itemref;
+    const manifestItems = manifestRaw
+      ? Array.isArray(manifestRaw)
+        ? manifestRaw
+        : [manifestRaw]
+      : [];
+    const spineItems = spineRaw ? (Array.isArray(spineRaw) ? spineRaw : [spineRaw]) : [];
+    const manifestMap = new Map();
+    manifestItems.forEach((item) => {
+      const id = getAttribute(item, 'id');
+      const href = getAttribute(item, 'href');
+      if (!id || !href) {
+        return;
+      }
+      manifestMap.set(id, {
+        id,
+        href,
+        mediaType: getAttribute(item, 'media-type') || getAttribute(item, 'mediaType') || '',
+        properties: getAttribute(item, 'properties') || ''
+      });
+    });
+
+    const styles = [];
+    for (const item of manifestMap.values()) {
+      if (!item.mediaType || !item.mediaType.includes('css')) {
+        continue;
+      }
+      const entryPath = resolveOpfHref(rootPath, item.href);
+      const file = zip.file(entryPath);
+      if (!file) {
+        continue;
+      }
+      try {
+        let css = await file.async('text');
+        css = css.replace(/@import[^;]+;/gi, '');
+        styles.push(css.trim());
+      } catch (error) {
+        console.warn('Failed to read EPUB stylesheet', item.href, error);
+      }
+    }
+    if (styles.length) {
+      result.styles = styles;
+    }
+
+    let totalCharacters = 0;
+    for (const spineEntry of spineItems) {
+      const idref = getAttribute(spineEntry, 'idref') || getAttribute(spineEntry, 'idRef');
+      if (!idref) {
+        continue;
+      }
+      const manifestItem = manifestMap.get(idref);
+      if (!manifestItem) {
+        continue;
+      }
+      if (!manifestItem.mediaType || !/html|xml/i.test(manifestItem.mediaType)) {
+        continue;
+      }
+      const entryPath = resolveOpfHref(rootPath, manifestItem.href);
+      const file = zip.file(entryPath) || zip.file(manifestItem.href);
+      if (!file) {
+        continue;
+      }
+      try {
+        const html = await file.async('text');
+        const sanitized = sanitizeEpubContent(html);
+        if (!sanitized) {
+          continue;
+        }
+        totalCharacters += sanitized.length;
+        result.spine.push({
+          id: manifestItem.id,
+          href: manifestItem.href,
+          label: manifestItem.properties || '',
+          content: sanitized
+        });
+      } catch (error) {
+        console.warn('Failed to read EPUB spine entry', entryPath, error);
+      }
+      if (result.spine.length >= 15 || totalCharacters > 250000) {
+        break;
+      }
+    }
+
+    if (!result.spine.length) {
+      const fallback = Object.values(zip.files).find((entry) => /\.(x?html?|htm)$/i.test(entry.name));
+      if (fallback) {
+        try {
+          const html = await fallback.async('text');
+          const sanitized = sanitizeEpubContent(html);
+          if (sanitized) {
+            result.spine.push({
+              id: fallback.name,
+              href: fallback.name,
+              label: 'preview',
+              content: sanitized
+            });
+          }
+        } catch (error) {
+          console.warn('Failed to extract fallback EPUB preview', error);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to extract EPUB view data', error);
+  }
+  return result;
+}
+
 function isAzw3DrmProtected(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 86) {
     return false;
@@ -764,10 +979,12 @@ ipcMain.handle('preview:load', async (_event, options = {}) => {
       return { success: true, kind: 'html', content: sanitizeHtmlSnippet(result.value || '') };
     }
     if (format === 'epub') {
-      const html = await extractEpubPreview(buffer);
-      if (html) {
-        return { success: true, kind: 'html', content: html };
-      }
+      return {
+        success: true,
+        kind: 'foliate',
+        mime: 'application/epub+zip',
+        data: buffer.toString('base64')
+      };
     }
     if (format === 'azw3') {
       azw3DrmProtected = isAzw3DrmProtected(buffer);
@@ -793,5 +1010,27 @@ ipcMain.handle('preview:load', async (_event, options = {}) => {
   } catch (error) {
     console.error('Failed to load preview asset', error);
     return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('foliate:open', async (_event, options = {}) => {
+  try {
+    let buffer = null;
+    if (options?.data && typeof options.data === 'string') {
+      buffer = Buffer.from(options.data, 'base64');
+    } else if (options?.path && typeof options.path === 'string') {
+      buffer = await fsPromises.readFile(options.path);
+    }
+    if (!buffer) {
+      return { success: false, error: 'Missing book data' };
+    }
+    const viewData = await extractEpubViewData(buffer);
+    if (!viewData?.spine?.length) {
+      return { success: false, error: 'Unable to extract book content' };
+    }
+    return { success: true, book: viewData };
+  } catch (error) {
+    console.error('Failed to prepare Foliate view data', error);
+    return { success: false, error: error?.message || 'Unable to open book' };
   }
 });

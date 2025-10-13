@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld('api', {
   loadPreviewAsset(options) {
     return ipcRenderer.invoke('preview:load', options);
   },
+  openFoliate(options) {
+    return ipcRenderer.invoke('foliate:open', options);
+  },
   ttsListVoices() {
     return ipcRenderer.invoke('tts:list-voices');
   },

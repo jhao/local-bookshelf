@@ -308,7 +308,16 @@
         "formatLabel": "Format",
         "sizeLabel": "Size",
         "pagesLabel": "Pages",
-        "updatedLabel": "Metadata updated"
+        "updatedLabel": "Metadata updated",
+        "loadingPreview": "Loading reader…",
+        "unavailable": "Preview unavailable.",
+        "enterFullscreen": "Enter fullscreen",
+        "exitFullscreen": "Exit fullscreen",
+        "foliateHint": "Use the Foliate toolbar below to navigate, change layout, and adjust zoom.",
+        "foliateStatus": "Foliate reader active",
+        "foliateLoading": "Initializing Foliate reader…",
+        "foliateFailed": "Foliate reader could not be loaded.",
+        "foliateBookmarkHint": "Manage bookmarks directly within the Foliate controls."
       },
       "ttsPanel": {
         "title": "Text-to-Speech",
@@ -703,7 +712,16 @@
         "formatLabel": "格式",
         "sizeLabel": "大小",
         "pagesLabel": "页数",
-        "updatedLabel": "元数据更新时间"
+        "updatedLabel": "元数据更新时间",
+        "loadingPreview": "正在加载阅读器…",
+        "unavailable": "暂无法预览。",
+        "enterFullscreen": "进入全屏",
+        "exitFullscreen": "退出全屏",
+        "foliateHint": "请使用下方 Foliate 工具栏进行翻页、排版与缩放。",
+        "foliateStatus": "Foliate 阅读器已启用",
+        "foliateLoading": "正在初始化 Foliate 阅读器…",
+        "foliateFailed": "无法加载 Foliate 阅读器。",
+        "foliateBookmarkHint": "请在 Foliate 阅读器内管理书签。"
       },
       "ttsPanel": {
         "title": "文本转语音",
