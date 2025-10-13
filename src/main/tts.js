@@ -11,6 +11,20 @@ let proxyConfigured = false;
 let authConfigured = false;
 let mirrorsConfigured = false;
 
+function isHuggingFaceUnauthorized(error) {
+  if (!error) {
+    return false;
+  }
+  if (error.status === 401 || error.code === 'HUGGINGFACE_AUTH') {
+    return true;
+  }
+  const message = String(error.message || error || '').toLowerCase();
+  if (!message) {
+    return false;
+  }
+  return message.includes('unauthorized access to file') || message.includes('401');
+}
+
 function getHuggingFaceToken() {
   const candidates = [
     'HF_TOKEN',
@@ -249,6 +263,12 @@ async function ensurePipeline() {
       } catch (error) {
         lastError = error;
         ttsPipelinePromise = null;
+        if (isHuggingFaceUnauthorized(error)) {
+          const authError = new Error('huggingface-auth');
+          authError.code = 'HUGGINGFACE_AUTH';
+          authError.cause = error;
+          throw authError;
+        }
       }
     }
     if (typeof mirror === 'string' && mirror && mirror !== 'default') {
@@ -263,6 +283,9 @@ async function ensurePipeline() {
   }
   const failure = new Error(lastError?.message || 'Failed to load text-to-speech model');
   failure.cause = lastError;
+  if (isHuggingFaceUnauthorized(lastError)) {
+    failure.code = 'HUGGINGFACE_AUTH';
+  }
   throw failure;
 }
 
@@ -347,7 +370,18 @@ async function synthesize(text, { voice } = {}) {
     throw new Error('empty');
   }
   const limited = normalized.length > 1600 ? `${normalized.slice(0, 1600)}…` : normalized;
-  const pipe = await ensurePipeline();
+  let pipe;
+  try {
+    pipe = await ensurePipeline();
+  } catch (error) {
+    if (isHuggingFaceUnauthorized(error)) {
+      const authError = new Error('huggingface-auth');
+      authError.code = 'HUGGINGFACE_AUTH';
+      authError.cause = error;
+      throw authError;
+    }
+    throw error;
+  }
   const voices = await listVoices();
   const options = {};
   if (voice && Array.isArray(voices)) {

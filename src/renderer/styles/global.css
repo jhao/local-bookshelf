@@ -1399,6 +1399,56 @@ body.preview-fullscreen-active {
   padding: 12px;
 }
 
+.tts-unavailable-button {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.tts-unavailable-button:hover {
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
+.tts-auth-modal {
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tts-auth-message {
+  margin: 0;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.tts-auth-message.subtle {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.tts-auth-steps {
+  margin: 0 0 12px 20px;
+  padding-left: 18px;
+  color: #1e293b;
+  line-height: 1.6;
+}
+
+.tts-auth-steps li {
+  margin-bottom: 4px;
+}
+
+.tts-auth-actions {
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.tts-auth-actions .primary-button {
+  min-width: 180px;
+}
+
 .export-status {
   margin: 0;
   color: #1d4ed8;
