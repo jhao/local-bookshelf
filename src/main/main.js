@@ -28,44 +28,39 @@ let languageMenuItems = {
   en: null,
   zh: null
 };
+let currentLocale = 'en';
+let mainWindowRef = null;
 
-function createWindow() {
-  const { workAreaSize } = screen.getPrimaryDisplay();
-  let targetHeight = Math.round(workAreaSize.height * 0.8);
-  let targetWidth = Math.round(targetHeight * WINDOW_ASPECT_RATIO);
-
-  if (targetWidth > workAreaSize.width) {
-    targetWidth = Math.round(workAreaSize.width * 0.9);
-    targetHeight = Math.round(targetWidth / WINDOW_ASPECT_RATIO);
+function buildEditMenu(locale) {
+  if (process.platform === 'darwin') {
+    return { role: 'editMenu' };
   }
 
-  const minWidth = Math.min(targetWidth, Math.max(Math.round(targetWidth * 0.6), 480));
-  const minHeight = Math.min(targetHeight, Math.max(Math.round(targetHeight * 0.6), 600));
+  const isZh = locale === 'zh';
+  return {
+    label: isZh ? '编辑' : 'Edit',
+    submenu: [
+      { role: 'undo', label: isZh ? '撤销' : 'Undo' },
+      { role: 'redo', label: isZh ? '重做' : 'Redo' },
+      { type: 'separator' },
+      { role: 'cut', label: isZh ? '剪切' : 'Cut' },
+      { role: 'copy', label: isZh ? '复制' : 'Copy' },
+      { role: 'paste', label: isZh ? '粘贴' : 'Paste' },
+      { role: 'selectAll', label: isZh ? '全选' : 'Select All' }
+    ]
+  };
+}
 
-  const mainWindow = new BrowserWindow({
-    width: targetWidth,
-    height: targetHeight,
-    minWidth,
-    minHeight,
-    title: '本地图书管理',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
-    }
-  });
-
-  mainWindow.setAspectRatio(WINDOW_ASPECT_RATIO);
-
-  const template = [
+function buildMenuTemplate(locale, mainWindow) {
+  return [
     ...(process.platform === 'darwin'
       ? [
           {
             role: 'appMenu'
-          }
+          },
+          buildEditMenu(locale)
         ]
-      : []),
+      : [buildEditMenu(locale)]),
     {
       label: '后台任务',
       click: () => {
@@ -97,7 +92,7 @@ function createWindow() {
           id: 'language-en',
           label: 'English',
           type: 'radio',
-          checked: true,
+          checked: locale !== 'zh',
           click: () => {
             if (
               !mainWindow.isDestroyed() &&
@@ -112,6 +107,7 @@ function createWindow() {
           id: 'language-zh',
           label: '中文',
           type: 'radio',
+          checked: locale === 'zh',
           click: () => {
             if (
               !mainWindow.isDestroyed() &&
@@ -125,13 +121,48 @@ function createWindow() {
       ]
     }
   ];
+}
 
-  const menu = Menu.buildFromTemplate(template);
+function applyMenuTemplate(mainWindow, locale) {
+  const menu = Menu.buildFromTemplate(buildMenuTemplate(locale, mainWindow));
   Menu.setApplicationMenu(menu);
   languageMenuItems = {
     en: menu.getMenuItemById('language-en'),
     zh: menu.getMenuItemById('language-zh')
   };
+}
+
+function createWindow() {
+  const { workAreaSize } = screen.getPrimaryDisplay();
+  let targetHeight = Math.round(workAreaSize.height * 0.8);
+  let targetWidth = Math.round(targetHeight * WINDOW_ASPECT_RATIO);
+
+  if (targetWidth > workAreaSize.width) {
+    targetWidth = Math.round(workAreaSize.width * 0.9);
+    targetHeight = Math.round(targetWidth / WINDOW_ASPECT_RATIO);
+  }
+
+  const minWidth = Math.min(targetWidth, Math.max(Math.round(targetWidth * 0.6), 480));
+  const minHeight = Math.min(targetHeight, Math.max(Math.round(targetHeight * 0.6), 600));
+
+  const mainWindow = new BrowserWindow({
+    width: targetWidth,
+    height: targetHeight,
+    minWidth,
+    minHeight,
+    title: '本地图书管理',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+
+  mainWindowRef = mainWindow;
+  mainWindow.setAspectRatio(WINDOW_ASPECT_RATIO);
+
+  applyMenuTemplate(mainWindow, currentLocale);
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
@@ -178,6 +209,10 @@ ipcMain.handle('dialog:select-directory', async (event, options = {}) => {
 ipcMain.on('locale:changed', (_event, locale) => {
   if (!locale) {
     return;
+  }
+  currentLocale = locale;
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    applyMenuTemplate(mainWindowRef, currentLocale);
   }
   if (languageMenuItems.en) {
     languageMenuItems.en.checked = locale === 'en';
