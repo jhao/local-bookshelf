@@ -922,6 +922,184 @@ async function extractAzw3Preview(buffer) {
   return '';
 }
 
+async function extractAzw3ViewData(buffer) {
+  const empty = {
+    metadata: {
+      title: '',
+      creator: '',
+      language: 'en'
+    },
+    spine: [],
+    styles: []
+  };
+  if (!Buffer.isBuffer(buffer)) {
+    return empty;
+  }
+  const zipSignature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  const zipIndex = buffer.indexOf(zipSignature);
+  if (zipIndex === -1) {
+    return empty;
+  }
+  try {
+    const zipSlice = buffer.slice(zipIndex);
+    const zip = await JSZip.loadAsync(zipSlice);
+    const opfEntries = zip
+      .file(/\.opf$/i)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of opfEntries) {
+      try {
+        const opfXml = await entry.async('text');
+        const opf = xmlParser.parse(opfXml);
+        const pkg = opf?.package || {};
+        const metadata = pkg.metadata || {};
+        const manifestRaw = pkg?.manifest?.item;
+        const spineRaw = pkg?.spine?.itemref;
+        const manifestItems = manifestRaw
+          ? Array.isArray(manifestRaw)
+            ? manifestRaw
+            : [manifestRaw]
+          : [];
+        const spineItems = spineRaw ? (Array.isArray(spineRaw) ? spineRaw : [spineRaw]) : [];
+        if (!manifestItems.length || !spineItems.length) {
+          continue;
+        }
+        const manifestMap = new Map();
+        manifestItems.forEach((item) => {
+          const id = getAttribute(item, 'id');
+          const href = getAttribute(item, 'href');
+          if (!id || !href) {
+            return;
+          }
+          manifestMap.set(id, {
+            id,
+            href,
+            mediaType:
+              getAttribute(item, 'media-type') ||
+              getAttribute(item, 'mediaType') ||
+              getAttribute(item, 'MediaType') ||
+              '',
+            properties: getAttribute(item, 'properties') || ''
+          });
+        });
+        if (!manifestMap.size) {
+          continue;
+        }
+        const rootPath = entry.name;
+        const styles = [];
+        for (const manifestItem of manifestMap.values()) {
+          if (!manifestItem.mediaType || !manifestItem.mediaType.includes('css')) {
+            continue;
+          }
+          const entryPath = resolveOpfHref(rootPath, manifestItem.href);
+          const file = zip.file(entryPath) || zip.file(manifestItem.href);
+          if (!file) {
+            continue;
+          }
+          try {
+            let css = await file.async('text');
+            css = css.replace(/@import[^;]+;/gi, '');
+            styles.push(css.trim());
+          } catch (error) {
+            console.warn('Failed to read AZW3 stylesheet', manifestItem.href, error);
+          }
+        }
+
+        const viewData = {
+          metadata: {
+            title: normalizeXmlValue(metadata['dc:title'] || metadata.title || '').trim(),
+            creator: normalizeXmlValue(metadata['dc:creator'] || metadata.creator || '').trim(),
+            language:
+              (normalizeXmlValue(metadata['dc:language'] || metadata.language) || 'en').trim() || 'en'
+          },
+          spine: [],
+          styles: styles.length ? styles : []
+        };
+
+        let totalCharacters = 0;
+        for (const spineEntry of spineItems) {
+          const idref = getAttribute(spineEntry, 'idref') || getAttribute(spineEntry, 'idRef');
+          if (!idref || !manifestMap.has(idref)) {
+            continue;
+          }
+          const manifestItem = manifestMap.get(idref);
+          if (!manifestItem.mediaType || !/html|xml/i.test(manifestItem.mediaType)) {
+            continue;
+          }
+          const entryPath = resolveOpfHref(rootPath, manifestItem.href);
+          const file = zip.file(entryPath) || zip.file(manifestItem.href);
+          if (!file) {
+            continue;
+          }
+          try {
+            const html = await file.async('text');
+            const sanitized = sanitizeEpubContent(html);
+            if (!sanitized) {
+              continue;
+            }
+            totalCharacters += sanitized.length;
+            viewData.spine.push({
+              id: manifestItem.id,
+              href: manifestItem.href,
+              label: manifestItem.properties || '',
+              content: sanitized
+            });
+          } catch (error) {
+            console.warn('Failed to read AZW3 spine entry', manifestItem.href, error);
+          }
+          if (viewData.spine.length >= 15 || totalCharacters > 250000) {
+            break;
+          }
+        }
+
+        if (!viewData.spine.length) {
+          const fallback = Object.values(zip.files).find((zipEntry) =>
+            /\.(x?html?|htm)$/i.test(zipEntry.name)
+          );
+          if (fallback) {
+            try {
+              const html = await fallback.async('text');
+              const sanitized = sanitizeEpubContent(html);
+              if (sanitized) {
+                viewData.spine.push({
+                  id: fallback.name,
+                  href: fallback.name,
+                  label: 'preview',
+                  content: sanitized
+                });
+              }
+            } catch (error) {
+              console.warn('Failed to extract fallback AZW3 preview', error);
+            }
+          }
+        }
+
+        if (viewData.spine.length) {
+          return viewData;
+        }
+      } catch (error) {
+        console.warn('Failed to parse AZW3 OPF for Foliate data', entry?.name, error);
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to construct AZW3 Foliate view data', error);
+  }
+  const fallbackHtml = await extractAzw3Preview(buffer);
+  if (fallbackHtml) {
+    return {
+      ...empty,
+      spine: [
+        {
+          id: 'preview',
+          href: 'preview.html',
+          label: 'preview',
+          content: fallbackHtml
+        }
+      ]
+    };
+  }
+  return empty;
+}
+
 ipcMain.handle('tts:set-auth-token', async (_event, token) => {
   try {
     tts.setHuggingFaceToken(typeof token === 'string' ? token : '');
@@ -1010,6 +1188,15 @@ ipcMain.handle('preview:load', async (_event, options = {}) => {
       azw3DrmProtected = isAzw3DrmProtected(buffer);
       if (azw3DrmProtected) {
         return { success: false, error: 'Preview unavailable: AZW3 file is DRM-protected.' };
+      }
+      const viewData = await extractAzw3ViewData(buffer);
+      if (Array.isArray(viewData?.spine) && viewData.spine.length) {
+        return {
+          success: true,
+          kind: 'foliate',
+          mime: 'application/epub+zip',
+          book: viewData
+        };
       }
       const html = await extractAzw3Preview(buffer);
       if (html) {

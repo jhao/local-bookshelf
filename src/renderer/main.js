@@ -3759,12 +3759,14 @@ function attachFoliateViewer(container, asset, pack, book) {
         container.dataset.foliateLocation = JSON.stringify(event.detail || {});
       });
       container.appendChild(view);
+      const bookPayload = asset.book && typeof asset.book === 'object' ? asset.book : null;
       return Promise.resolve(
         view.open({
           data: typeof asset.data === 'string' ? asset.data : null,
           objectUrl: asset.objectUrl,
           locale,
-          metadata
+          metadata,
+          ...(bookPayload ? { book: bookPayload } : {})
         })
       ).then(() => {
         container.dataset.foliateReady = 'true';
