@@ -1223,15 +1223,31 @@ ipcMain.handle('preview:load', async (_event, options = {}) => {
 ipcMain.handle('foliate:open', async (_event, options = {}) => {
   try {
     let buffer = null;
+    let format = typeof options?.format === 'string' ? options.format.toLowerCase() : '';
     if (options?.data && typeof options.data === 'string') {
       buffer = Buffer.from(options.data, 'base64');
     } else if (options?.path && typeof options.path === 'string') {
       buffer = await fsPromises.readFile(options.path);
+      if (!format) {
+        const ext = path.extname(options.path);
+        if (ext) {
+          format = ext.slice(1).toLowerCase();
+        }
+      }
     }
     if (!buffer) {
       return { success: false, error: 'Missing book data' };
     }
-    const viewData = await extractEpubViewData(buffer);
+    let viewData = null;
+    if (format === 'azw3') {
+      if (isAzw3DrmProtected(buffer)) {
+        return { success: false, error: 'Preview unavailable: AZW3 file is DRM-protected.' };
+      }
+      viewData = await extractAzw3ViewData(buffer);
+    }
+    if (!viewData?.spine?.length) {
+      viewData = await extractEpubViewData(buffer);
+    }
     if (!viewData?.spine?.length) {
       return { success: false, error: 'Unable to extract book content' };
     }
