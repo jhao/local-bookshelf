@@ -1195,6 +1195,7 @@ ipcMain.handle('preview:load', async (_event, options = {}) => {
           success: true,
           kind: 'foliate',
           mime: 'application/epub+zip',
+          data: buffer.toString('base64'),
           book: viewData
         };
       }
