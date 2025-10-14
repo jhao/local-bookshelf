@@ -176,9 +176,10 @@ function getModelCandidates() {
     preferredModels.unshift(localDir);
   }
   const defaultModels = [
+    'Xenova/xtts_v1.1',
+    'Xenova/xtts',
     'Xenova/vits-multilingual-mini',
-    'Xenova/vits-multilingual',
-    'Xenova/tts_en'
+    'Xenova/vits-multilingual'
   ];
   const combined = [...preferredModels, ...defaultModels];
   const seen = new Set();
