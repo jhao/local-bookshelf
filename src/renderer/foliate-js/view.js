@@ -284,13 +284,37 @@ class FoliateView extends HTMLElement {
     }
     let request = source;
     if (typeof source === 'string') {
-      request = { objectUrl: source };
+      const trimmed = source.trim();
+      if (/^(blob:|data:|https?:)/i.test(trimmed)) {
+        request = { objectUrl: trimmed };
+      } else {
+        request = { path: trimmed };
+      }
+    }
+    if (!request || typeof request !== 'object') {
+      request = {};
+    }
+    const format =
+      typeof request.format === 'string'
+        ? request.format
+        : typeof source?.format === 'string'
+        ? source.format
+        : undefined;
+    if (request.path) {
+      if (!window.api?.openFoliate) {
+        throw new Error('Foliate bridge unavailable');
+      }
+      const response = await window.api.openFoliate({ path: request.path, format });
+      if (!response?.success || !response.book) {
+        throw new Error(response?.error || pickMessage(this._state.locale, 'error'));
+      }
+      return response;
     }
     const base64 = await this.resolveBase64(request);
     if (!window.api?.openFoliate) {
       throw new Error('Foliate bridge unavailable');
     }
-    const response = await window.api.openFoliate({ data: base64 });
+    const response = await window.api.openFoliate({ data: base64, format });
     if (!response?.success || !response.book) {
       throw new Error(response?.error || pickMessage(this._state.locale, 'error'));
     }

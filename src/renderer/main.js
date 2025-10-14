@@ -3760,15 +3760,21 @@ function attachFoliateViewer(container, asset, pack, book) {
       });
       container.appendChild(view);
       const bookPayload = asset.book && typeof asset.book === 'object' ? asset.book : null;
-      return Promise.resolve(
-        view.open({
-          data: typeof asset.data === 'string' ? asset.data : null,
-          objectUrl: asset.objectUrl,
-          locale,
-          metadata,
-          ...(bookPayload ? { book: bookPayload } : {})
-        })
-      ).then(() => {
+      const format = typeof book?.format === 'string' ? book.format.toLowerCase() : '';
+      const openOptions = {
+        data: typeof asset.data === 'string' ? asset.data : null,
+        objectUrl: asset.objectUrl,
+        locale,
+        metadata,
+        ...(bookPayload ? { book: bookPayload } : {})
+      };
+      if (!bookPayload && format === 'azw3' && typeof book?.path === 'string') {
+        openOptions.path = book.path;
+        openOptions.format = format;
+      } else if (typeof book?.format === 'string' && !openOptions.format) {
+        openOptions.format = format;
+      }
+      return Promise.resolve(view.open(openOptions)).then(() => {
         container.dataset.foliateReady = 'true';
       });
     })
