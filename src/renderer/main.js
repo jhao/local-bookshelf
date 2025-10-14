@@ -3549,9 +3549,15 @@ function trimPreviewText(text, limit = 40000) {
 }
 
 function ensureFoliateReady() {
-  const foliateDefined = window.customElements?.get('foliate-view');
-  if (foliateDefined) {
+  const registry = window.customElements;
+  if (!registry) {
+    return Promise.reject(new Error('Custom elements registry is unavailable'));
+  }
+  if (registry.get('foliate-view')) {
     return Promise.resolve();
+  }
+  if (typeof registry.whenDefined === 'function') {
+    return registry.whenDefined('foliate-view');
   }
   return Promise.reject(new Error('Foliate view component is unavailable'));
 }
@@ -3715,11 +3721,46 @@ function getPreviewAssetText(book) {
   return '';
 }
 
+function getFoliateAssetSignature(asset, book) {
+  if (!asset) {
+    return '';
+  }
+  if (asset.objectUrl) {
+    return asset.objectUrl;
+  }
+  if (typeof asset.data === 'string' && asset.data.length) {
+    const base = asset.data.length > 32 ? asset.data.slice(0, 32) : asset.data;
+    return `${book?.id || ''}:${base}:${asset.mime || ''}`;
+  }
+  if (asset.book) {
+    const metadata = asset.book.metadata || {};
+    const spineLength = Array.isArray(asset.book.spine) ? asset.book.spine.length : 0;
+    return `${book?.id || ''}:${metadata.title || ''}:${spineLength}`;
+  }
+  if (book?.id) {
+    return `book:${book.id}`;
+  }
+  return '';
+}
+
+function parseFoliateLocation(value) {
+  if (!value) {
+    return null;
+  }
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.warn('Failed to parse Foliate location', error);
+  }
+  return null;
+}
+
 function attachFoliateViewer(container, asset, pack, book) {
   if (!container || !asset) {
     return;
   }
-  const signature = asset.objectUrl || asset.data || '';
+  const previousSignature = container.dataset.foliateSignature;
+  const signature = getFoliateAssetSignature(asset, book);
   if (!signature) {
     container.innerHTML = '';
     container.appendChild(
@@ -3731,52 +3772,70 @@ function attachFoliateViewer(container, asset, pack, book) {
     return;
   }
   if (
-    container.dataset.foliateSignature === signature &&
+    previousSignature === signature &&
     container.dataset.foliateReady === 'true'
   ) {
+    const existingView = container.querySelector('foliate-view');
+    if (existingView) {
+      const locale = state?.locale || 'en';
+      if (locale) {
+        existingView.setAttribute('lang', locale);
+      }
+    }
     return;
+  }
+  if (previousSignature !== signature) {
+    delete container.dataset.foliateLocation;
   }
   container.dataset.foliateSignature = signature;
   container.dataset.foliateReady = 'false';
   ensureFoliateReady()
-    .then(() => {
+    .then(async () => {
       if (!document.body.contains(container)) {
         return;
       }
+      let resource = asset.objectUrl || null;
+      if (!resource && typeof asset.data === 'string' && asset.data.length) {
+        const objectUrl = createObjectUrlFromBase64(asset.data, asset.mime || 'application/epub+zip');
+        if (objectUrl) {
+          asset.objectUrl = objectUrl;
+          resource = objectUrl;
+        }
+      }
+      if (!resource && asset.book) {
+        resource = asset.book;
+      }
+      if (!resource) {
+        throw new Error('Missing Foliate resource data');
+      }
       container.innerHTML = '';
-      delete container.dataset.foliateLocation;
       const view = document.createElement('foliate-view');
       view.style.width = '100%';
       view.style.height = '100%';
       const locale = state?.locale || 'en';
-      view.setAttribute('lang', locale);
-      const authorList = Array.isArray(book?.authors) ? book.authors : book?.author ? [book.author] : [];
-      const metadata = {
-        title: book?.title || '',
-        creator: authorList.filter(Boolean).join(', ')
-      };
+      if (locale) {
+        view.setAttribute('lang', locale);
+      }
       view.addEventListener('relocate', (event) => {
-        container.dataset.foliateLocation = JSON.stringify(event.detail || {});
+        try {
+          container.dataset.foliateLocation = JSON.stringify(event.detail || {});
+        } catch (error) {
+          console.warn('Failed to store Foliate location', error);
+        }
       });
       container.appendChild(view);
-      const bookPayload = asset.book && typeof asset.book === 'object' ? asset.book : null;
-      const format = typeof book?.format === 'string' ? book.format.toLowerCase() : '';
-      const openOptions = {
-        data: typeof asset.data === 'string' ? asset.data : null,
-        objectUrl: asset.objectUrl,
-        locale,
-        metadata,
-        ...(bookPayload ? { book: bookPayload } : {})
-      };
-      if (!bookPayload && format === 'azw3' && typeof book?.path === 'string') {
-        openOptions.path = book.path;
-        openOptions.format = format;
-      } else if (typeof book?.format === 'string' && !openOptions.format) {
-        openOptions.format = format;
+      const lastLocation = parseFoliateLocation(container.dataset.foliateLocation);
+      await view.open(resource);
+      const initOptions = { showTextStart: !lastLocation };
+      if (lastLocation) {
+        initOptions.lastLocation = lastLocation;
       }
-      return Promise.resolve(view.open(openOptions)).then(() => {
-        container.dataset.foliateReady = 'true';
-      });
+      if (typeof view.init === 'function') {
+        await view.init(initOptions);
+      } else if (lastLocation) {
+        await view.goTo(lastLocation);
+      }
+      container.dataset.foliateReady = 'true';
     })
     .catch((error) => {
       console.warn('Unable to initialize Foliate reader', error);
