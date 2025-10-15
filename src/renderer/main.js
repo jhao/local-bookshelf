@@ -643,7 +643,6 @@ async function initializeApp() {
     console.error('Failed to restore state', error);
   } finally {
     persistence.hydrating = false;
-    initializeTtsEngine();
     renderApp();
     if (window.api?.notifyLocaleChanged) {
       window.api.notifyLocaleChanged(state.locale);
