@@ -1162,15 +1162,7 @@ async function extractAzw3ViewData(buffer) {
   return empty;
 }
 
-ipcMain.handle('tts:set-auth-token', async (_event, token) => {
-  try {
-    tts.setHuggingFaceToken(typeof token === 'string' ? token : '');
-    return { success: true };
-  } catch (error) {
-    console.error('Failed to update Hugging Face token', error);
-    return { success: false, error: error?.message || 'unavailable' };
-  }
-});
+ipcMain.handle('tts:set-auth-token', async () => ({ success: true }));
 
 ipcMain.handle('tts:list-voices', async () => {
   try {
@@ -1178,13 +1170,9 @@ ipcMain.handle('tts:list-voices', async () => {
     return { success: true, voices };
   } catch (error) {
     console.error('Failed to enumerate TTS voices', error);
-    const code = error?.code === 'HUGGINGFACE_AUTH' || error?.message === 'huggingface-auth'
-      ? 'huggingface-auth'
-      : undefined;
     return {
       success: false,
-      error: code || error?.message || 'unavailable',
-      code
+      error: error?.message || 'unavailable'
     };
   }
 });
@@ -1199,9 +1187,6 @@ ipcMain.handle('tts:synthesize', async (_event, options = {}) => {
     }
     if (error?.message === 'empty') {
       return { success: false, error: 'empty' };
-    }
-    if (error?.code === 'HUGGINGFACE_AUTH' || error?.message === 'huggingface-auth') {
-      return { success: false, error: 'huggingface-auth', code: 'huggingface-auth' };
     }
     console.error('Failed to synthesize speech', error);
     return { success: false, error: error?.message || 'unavailable' };
