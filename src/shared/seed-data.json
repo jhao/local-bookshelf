@@ -317,7 +317,17 @@
         "foliateStatus": "Foliate reader active",
         "foliateLoading": "Initializing Foliate reader…",
         "foliateFailed": "Foliate reader could not be loaded.",
-        "foliateBookmarkHint": "Manage bookmarks directly within the Foliate controls."
+        "foliateBookmarkHint": "Manage bookmarks directly within the Foliate controls.",
+        "foliatePrev": "Previous page",
+        "foliateNext": "Next page",
+        "foliateLayoutLabel": "Layout",
+        "foliateLayoutPaginated": "Paginated",
+        "foliateLayoutScrolled": "Continuous scroll",
+        "foliateZoomLabel": "Zoom",
+        "foliateZoomFitWidth": "Fit width",
+        "foliateZoomFitPage": "Fit page",
+        "foliateZoomActual": "100%",
+        "foliateZoomLarge": "150%"
       },
       "ttsPanel": {
         "title": "Text-to-Speech",
@@ -740,7 +750,17 @@
         "foliateStatus": "Foliate 阅读器已启用",
         "foliateLoading": "正在初始化 Foliate 阅读器…",
         "foliateFailed": "无法加载 Foliate 阅读器。",
-        "foliateBookmarkHint": "请在 Foliate 阅读器内管理书签。"
+        "foliateBookmarkHint": "请在 Foliate 阅读器内管理书签。",
+        "foliatePrev": "上一页",
+        "foliateNext": "下一页",
+        "foliateLayoutLabel": "排版",
+        "foliateLayoutPaginated": "分页",
+        "foliateLayoutScrolled": "连续滚动",
+        "foliateZoomLabel": "缩放",
+        "foliateZoomFitWidth": "适应宽度",
+        "foliateZoomFitPage": "适应页面",
+        "foliateZoomActual": "100%",
+        "foliateZoomLarge": "150%"
       },
       "ttsPanel": {
         "title": "文本转语音",
