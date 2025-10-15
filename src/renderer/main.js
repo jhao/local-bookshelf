@@ -299,12 +299,7 @@ const initialBookmarks = Object.values(initialCollectionBooks)
 const initialPreviewStates = Object.values(initialCollectionBooks)
   .flat()
   .reduce((map, book) => {
-    map[book.id] = {
-      page: book.progress?.currentPage || 1,
-      zoom: 1,
-      fit: 'width',
-      fullscreen: false
-    };
+    map[book.id] = { fullscreen: false };
     return map;
   }, {});
 
@@ -1069,12 +1064,7 @@ function getBooks(collectionId) {
 
 function getPreviewState(bookId, defaultPage = 1) {
   if (!state.previewStates[bookId]) {
-    state.previewStates[bookId] = {
-      page: defaultPage,
-      zoom: 1,
-      fit: 'width',
-      fullscreen: false
-    };
+    state.previewStates[bookId] = { fullscreen: false };
   }
   return state.previewStates[bookId];
 }
@@ -1093,10 +1083,7 @@ function setSelectedCollection(collectionId) {
   const books = getBooks(collectionId);
   if (books.length) {
     state.selectedBookId = books[0].id;
-    const preview = getPreviewState(state.selectedBookId, books[0].progress?.currentPage || 1);
-    preview.page = books[0].progress?.currentPage || 1;
-    preview.zoom = 1;
-    preview.fit = 'width';
+    getPreviewState(state.selectedBookId, books[0].progress?.currentPage || 1);
   }
   ensurePreferences(collectionId);
   renderApp();
@@ -1107,10 +1094,7 @@ function setSelectedBook(bookId) {
   const book = findBookById(bookId);
   if (book) {
     ensurePreviewAsset(book);
-    const preview = getPreviewState(bookId, book.progress?.currentPage || 1);
-    preview.page = book.progress?.currentPage || 1;
-    preview.zoom = 1;
-    preview.fit = 'width';
+    getPreviewState(bookId, book.progress?.currentPage || 1);
   }
   if (state.selectedCollectionId) {
     state.activePage = 'preview';
@@ -1690,7 +1674,7 @@ function applyScanResults(job) {
 
   books.forEach((book) => {
     if (!state.previewStates[book.id]) {
-      state.previewStates[book.id] = { page: 1, zoom: 1, fit: 'width', fullscreen: false };
+      state.previewStates[book.id] = { fullscreen: false };
     }
     if (!state.bookmarks[book.id]) {
       state.bookmarks[book.id] = new Set();
@@ -3581,37 +3565,6 @@ function createObjectUrlFromBase64(base64, mime = 'application/octet-stream') {
   return '';
 }
 
-function createObjectUrlFromDataUrl(dataUrl) {
-  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
-    return '';
-  }
-  const separatorIndex = dataUrl.indexOf(',');
-  if (separatorIndex === -1) {
-    return '';
-  }
-  const meta = dataUrl.slice(5, separatorIndex);
-  const data = dataUrl.slice(separatorIndex + 1);
-  const isBase64 = meta.includes(';base64');
-  const mime = meta.replace(/;base64/, '') || 'application/octet-stream';
-  try {
-    let byteString;
-    if (isBase64) {
-      byteString = atob(data);
-    } else {
-      byteString = decodeURIComponent(data);
-    }
-    const bytes = new Uint8Array(byteString.length);
-    for (let i = 0; i < byteString.length; i += 1) {
-      bytes[i] = byteString.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: mime });
-    return URL.createObjectURL(blob);
-  } catch (error) {
-    console.warn('Failed to create object URL for preview asset', error);
-  }
-  return '';
-}
-
 function disposePreviewAsset(bookId) {
   const asset = state.previewAssets[bookId];
   if (asset?.objectUrl) {
@@ -3625,31 +3578,16 @@ function disposePreviewAsset(bookId) {
 
 function storePreviewAsset(bookId, payload) {
   disposePreviewAsset(bookId);
-  if (payload && payload.kind === 'dataUrl' && typeof payload.data === 'string') {
-    const objectUrl = createObjectUrlFromDataUrl(payload.data);
-    if (objectUrl) {
-      payload = { ...payload, objectUrl };
-    }
-  } else if (payload && payload.kind === 'foliate' && typeof payload.data === 'string') {
+  if (payload && payload.kind === 'foliate' && typeof payload.data === 'string') {
     const objectUrl = createObjectUrlFromBase64(payload.data, payload.mime || 'application/epub+zip');
     if (objectUrl) {
       payload = { ...payload, objectUrl };
     }
   }
+  if (payload && typeof payload.textPreview === 'string') {
+    payload = { ...payload, textPreview: trimPreviewText(payload.textPreview) };
+  }
   state.previewAssets[bookId] = payload;
-}
-
-function wrapPreviewHtml(content) {
-  const styles = `
-    <style>
-      body { font-family: 'Inter', 'PingFang SC', sans-serif; margin: 0 auto; padding: 24px; line-height: 1.65; max-width: 760px; color: #1f2937; background: #ffffff; }
-      h1, h2, h3, h4 { color: #0f172a; }
-      img, video { max-width: 100%; height: auto; }
-      p { margin: 0 0 1em; }
-      pre { white-space: pre-wrap; background: #f8fafc; padding: 20px; border-radius: 12px; line-height: 1.7; }
-    </style>
-  `;
-  return `<!DOCTYPE html><html><head><meta charset="utf-8">${styles}</head><body>${content}</body></html>`;
 }
 
 function ensurePreviewAsset(book) {
@@ -3658,12 +3596,7 @@ function ensurePreviewAsset(book) {
   }
   const cached = state.previewAssets[book.id];
   if (cached) {
-    if (cached.kind === 'dataUrl' && typeof cached.data === 'string' && !cached.objectUrl) {
-      const objectUrl = createObjectUrlFromDataUrl(cached.data);
-      if (objectUrl) {
-        cached.objectUrl = objectUrl;
-      }
-    } else if (cached.kind === 'foliate' && typeof cached.data === 'string' && !cached.objectUrl) {
+    if (cached.kind === 'foliate' && typeof cached.data === 'string' && !cached.objectUrl) {
       const objectUrl = createObjectUrlFromBase64(cached.data, cached.mime || 'application/epub+zip');
       if (objectUrl) {
         cached.objectUrl = objectUrl;
@@ -3674,7 +3607,7 @@ function ensurePreviewAsset(book) {
   if (!book.path || !window.api?.loadPreviewAsset) {
     const fallback = trimPreviewText(getBookPreviewText(book) || getBookSummaryText(book));
     const result = fallback
-      ? { status: 'ready', kind: 'text', content: fallback }
+      ? { status: 'error', error: 'unavailable', textPreview: fallback }
       : { status: 'error', error: 'unavailable' };
     storePreviewAsset(book.id, result);
     return state.previewAssets[book.id];
@@ -3683,16 +3616,20 @@ function ensurePreviewAsset(book) {
   window.api
     .loadPreviewAsset({ path: book.path, format: book.format })
     .then((response) => {
-      if (response?.success) {
-        const payload = { ...response, status: 'ready' };
-        if (payload.kind === 'text') {
-          payload.content = trimPreviewText(payload.content);
-        }
-        storePreviewAsset(book.id, payload);
+      if (response?.success && response.kind === 'foliate') {
+        storePreviewAsset(book.id, {
+          status: 'ready',
+          kind: 'foliate',
+          data: response.data || '',
+          mime: response.mime || 'application/epub+zip',
+          book: response.book,
+          textPreview: response.textPreview
+        });
       } else {
         storePreviewAsset(book.id, {
           status: 'error',
-          error: response?.error || 'unavailable'
+          error: response?.error || 'unavailable',
+          textPreview: response?.textPreview
         });
       }
       renderApp();
@@ -3709,14 +3646,11 @@ function getPreviewAssetText(book) {
     return '';
   }
   const asset = state.previewAssets[book.id];
-  if (!asset || asset.status !== 'ready') {
+  if (!asset) {
     return '';
   }
-  if (asset.kind === 'text') {
-    return asset.content || '';
-  }
-  if (asset.kind === 'html') {
-    return convertHtmlToPlainText(asset.content || '');
+  if (typeof asset.textPreview === 'string' && asset.textPreview.length) {
+    return asset.textPreview;
   }
   return '';
 }
@@ -3826,14 +3760,12 @@ function attachFoliateViewer(container, asset, pack, book) {
       container.appendChild(view);
       const lastLocation = parseFoliateLocation(container.dataset.foliateLocation);
       await view.open(resource);
-      const initOptions = { showTextStart: !lastLocation };
       if (lastLocation) {
-        initOptions.lastLocation = lastLocation;
-      }
-      if (typeof view.init === 'function') {
-        await view.init(initOptions);
-      } else if (lastLocation) {
         await view.goTo(lastLocation);
+      } else if (typeof view.goToTextStart === 'function') {
+        await view.goToTextStart();
+      } else if (typeof view.goTo === 'function') {
+        await view.goTo(0);
       }
       container.dataset.foliateReady = 'true';
     })
@@ -3859,91 +3791,35 @@ function attachFoliateViewer(container, asset, pack, book) {
 
 function renderPreviewViewer(pack, book, previewState, providedAsset) {
   const asset = providedAsset || ensurePreviewAsset(book);
-  const classes = [`fit-${previewState.fit}`];
+  const classes = ['preview-viewer'];
   if (previewState.fullscreen) {
     classes.push('fullscreen');
   }
-  const viewer = createElement('div', { className: `preview-viewer ${classes.join(' ')}` });
+  const viewer = createElement('div', { className: classes.join(' ') });
   if (!asset || asset.status === 'loading') {
     viewer.appendChild(createElement('p', { className: 'preview-loading', text: pack.previewPanel.loadingPreview }));
     return viewer;
   }
-  if (asset.status === 'error') {
-    const message = asset.error
-      ? `${pack.previewPanel.unavailable} (${asset.error})`
-      : pack.previewPanel.unavailable;
+  if (asset.status === 'error' || asset.kind !== 'foliate') {
+    const baseMessage = pack.previewPanel.unavailable || 'Preview unavailable.';
+    const message = asset?.error ? `${baseMessage} (${asset.error})` : baseMessage;
     viewer.appendChild(createElement('p', { className: 'preview-error', text: message }));
     return viewer;
   }
-  if (asset.kind === 'foliate') {
-    const foliateContainer = createElement('div', { className: 'preview-foliate-viewer' });
-    foliateContainer.appendChild(
-      createElement('p', {
-        className: 'preview-loading',
-        text:
-          pack.previewPanel.foliateLoading ||
-          pack.previewPanel.loadingPreview ||
-          'Loading reader…'
-      })
-    );
-    viewer.appendChild(foliateContainer);
-    requestAnimationFrame(() => {
-      attachFoliateViewer(foliateContainer, asset, pack, book);
-    });
-    return viewer;
-  }
-  if (asset.kind === 'dataUrl') {
-    const frameWrapper = createElement('div', { className: 'preview-frame-wrapper' });
-    frameWrapper.style.transform = `scale(${previewState.zoom})`;
-    frameWrapper.style.transformOrigin = 'top left';
-    frameWrapper.style.width = `${(1 / previewState.zoom) * 100}%`;
-    frameWrapper.style.height = '100%';
-    const frame = createElement('iframe', {
-      className: 'preview-frame',
-      attributes: {
-        src: asset.objectUrl || asset.data,
-        title: `${book.title} preview`,
-        sandbox: 'allow-same-origin allow-scripts allow-forms',
-        allow: 'fullscreen'
-      }
-    });
-    frame.setAttribute('loading', 'lazy');
-    frame.style.height = '100%';
-    frameWrapper.appendChild(frame);
-    viewer.appendChild(frameWrapper);
-    return viewer;
-  }
-  if (asset.kind === 'html') {
-    const frameWrapper = createElement('div', { className: 'preview-frame-wrapper' });
-    frameWrapper.style.transform = `scale(${previewState.zoom})`;
-    frameWrapper.style.transformOrigin = 'top left';
-    frameWrapper.style.width = `${(1 / previewState.zoom) * 100}%`;
-    frameWrapper.style.height = '100%';
-    const frame = createElement('iframe', {
-      className: 'preview-frame',
-      attributes: {
-        srcdoc: wrapPreviewHtml(asset.content || ''),
-        title: `${book.title} preview`,
-        sandbox: 'allow-same-origin'
-      }
-    });
-    frame.setAttribute('loading', 'lazy');
-    frame.style.height = '100%';
-    frameWrapper.appendChild(frame);
-    viewer.appendChild(frameWrapper);
-    return viewer;
-  }
-  const textBlock = createElement('pre', {
-    className: 'preview-text',
-    text: asset.content || trimPreviewText(getBookPreviewText(book)) || ''
+  const foliateContainer = createElement('div', { className: 'preview-foliate-viewer' });
+  foliateContainer.appendChild(
+    createElement('p', {
+      className: 'preview-loading',
+      text:
+        pack.previewPanel.foliateLoading ||
+        pack.previewPanel.loadingPreview ||
+        'Loading reader…'
+    })
+  );
+  viewer.appendChild(foliateContainer);
+  requestAnimationFrame(() => {
+    attachFoliateViewer(foliateContainer, asset, pack, book);
   });
-  textBlock.setAttribute('dir', 'auto');
-  textBlock.style.fontSize = `${Math.max(0.8, previewState.zoom)}rem`;
-  textBlock.style.height = '100%';
-  if (state.ttsState.playing && state.ttsState.highlight) {
-    textBlock.classList.add('tts-active');
-  }
-  viewer.appendChild(textBlock);
   return viewer;
 }
 
@@ -3978,83 +3854,40 @@ function createPreviewSection(pack, book, previewState) {
   );
 
   const asset = ensurePreviewAsset(book);
-  const usingFoliate = asset?.status === 'ready' && asset.kind === 'foliate';
-  const controls = createElement('div', { className: 'preview-controls' });
-  if (usingFoliate) {
-    controls.classList.add('foliate-active');
-    controls.appendChild(
-      createElement('p', {
-        className: 'preview-hint',
-        text:
-          pack.previewPanel.foliateHint ||
-          'Use the Foliate toolbar to adjust layout, zoom, and navigation.'
-      })
-    );
-  } else {
-    const zoomOut = createElement('button', { text: pack.previewPanel.zoomOut });
-    zoomOut.type = 'button';
-    zoomOut.addEventListener('click', () => {
-      previewState.zoom = Math.max(0.5, previewState.zoom - 0.1);
-      renderApp();
-    });
-    const zoomIn = createElement('button', { text: pack.previewPanel.zoomIn });
-    zoomIn.type = 'button';
-    zoomIn.addEventListener('click', () => {
-      previewState.zoom = Math.min(2.5, previewState.zoom + 0.1);
-      renderApp();
-    });
-    const fitWidth = createElement('button', { text: pack.previewPanel.fitWidth });
-    fitWidth.type = 'button';
-    fitWidth.addEventListener('click', () => {
-      previewState.fit = 'width';
-      renderApp();
-    });
-    const fitPage = createElement('button', { text: pack.previewPanel.fitPage });
-    fitPage.type = 'button';
-    fitPage.addEventListener('click', () => {
-      previewState.fit = 'page';
-      renderApp();
-    });
-    const prevPage = createElement('button', { text: pack.previewPanel.previousPage });
-    prevPage.type = 'button';
-    prevPage.addEventListener('click', () => {
-      previewState.page = Math.max(1, previewState.page - 1);
-      renderApp();
-    });
-    const nextPage = createElement('button', { text: pack.previewPanel.nextPage });
-    nextPage.type = 'button';
-    nextPage.addEventListener('click', () => {
-      previewState.page = Math.min(book.pages, previewState.page + 1);
-      renderApp();
-    });
-    const fullscreenToggle = createElement('button', {
-      text: previewState.fullscreen
-        ? pack.previewPanel.exitFullscreen
-        : pack.previewPanel.enterFullscreen
-    });
-    fullscreenToggle.type = 'button';
-    fullscreenToggle.addEventListener('click', () => {
-      previewState.fullscreen = !previewState.fullscreen;
-      renderApp();
-    });
-    controls.appendChild(zoomOut);
-    controls.appendChild(zoomIn);
-    controls.appendChild(fitWidth);
-    controls.appendChild(fitPage);
-    controls.appendChild(prevPage);
-    controls.appendChild(nextPage);
-    controls.appendChild(fullscreenToggle);
-  }
+  const controls = createElement('div', { className: 'preview-controls foliate-active' });
+  controls.appendChild(
+    createElement('p', {
+      className: 'preview-hint',
+      text:
+        pack.previewPanel.foliateHint ||
+        'Use the Foliate toolbar to adjust layout, zoom, and navigation.'
+    })
+  );
+  const fullscreenToggle = createElement('button', {
+    text: previewState.fullscreen
+      ? pack.previewPanel.exitFullscreen
+      : pack.previewPanel.enterFullscreen
+  });
+  fullscreenToggle.type = 'button';
+  fullscreenToggle.addEventListener('click', () => {
+    previewState.fullscreen = !previewState.fullscreen;
+    renderApp();
+  });
+  controls.appendChild(fullscreenToggle);
   panel.appendChild(controls);
 
-  const pageLabel = usingFoliate
-    ? pack.previewPanel.foliateStatus || 'Foliate reader active'
-    : `${pack.previewPanel.currentPage} ${previewState.page} ${pack.previewPanel.of} ${book.pages}`;
+  let pageLabel = pack.previewPanel.loadingPreview || 'Loading preview…';
+  if (asset?.status === 'ready' && asset.kind === 'foliate') {
+    pageLabel = pack.previewPanel.foliateStatus || 'Foliate reader active';
+  } else if (asset?.status === 'error') {
+    const baseMessage = pack.previewPanel.unavailable || 'Preview unavailable.';
+    pageLabel = asset.error ? `${baseMessage} (${asset.error})` : baseMessage;
+  }
   panel.appendChild(createElement('p', { className: 'preview-page', text: pageLabel }));
 
   panel.appendChild(renderPreviewViewer(pack, book, previewState, asset));
 
-  if (usingFoliate) {
+  if (asset?.status === 'ready' && asset.kind === 'foliate') {
     panel.appendChild(
       createElement('p', {
         className: 'preview-hint foliate-bookmark-hint',
@@ -4063,26 +3896,6 @@ function createPreviewSection(pack, book, previewState) {
           'Use the Foliate reader controls to manage bookmarks.'
       })
     );
-  } else {
-    const bookmarks = getBookmarks(book.id);
-    const bookmarkButton = createElement('button', {
-      className: 'ghost-button',
-      text: bookmarks.has(previewState.page)
-        ? pack.previewPanel.removeBookmark
-        : pack.previewPanel.addBookmark
-    });
-    bookmarkButton.type = 'button';
-    bookmarkButton.addEventListener('click', () => {
-      if (bookmarks.has(previewState.page)) {
-        bookmarks.delete(previewState.page);
-        showToast(pack.previewPanel.removedBookmark);
-      } else {
-        bookmarks.add(previewState.page);
-        showToast(pack.previewPanel.savedBookmark);
-      }
-      renderApp();
-    });
-    panel.appendChild(bookmarkButton);
   }
 
   return panel;

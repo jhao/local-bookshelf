@@ -498,6 +498,25 @@ function normalizeExtension(format, filePath) {
   return '';
 }
 
+function getMimeForFormat(format) {
+  switch (format) {
+    case 'pdf':
+      return 'application/pdf';
+    case 'epub':
+      return 'application/epub+zip';
+    case 'azw3':
+      return 'application/epub+zip';
+    case 'mobi':
+      return 'application/x-mobipocket-ebook';
+    case 'docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    case 'txt':
+      return 'text/plain';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
 function sanitizePlainText(content) {
   if (!content) {
     return '';
@@ -509,6 +528,14 @@ function sanitizePlainText(content) {
     .replace(/[\t ]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function htmlToPlainText(content) {
+  if (!content) {
+    return '';
+  }
+  const withoutTags = content.replace(/<[^>]*>/g, ' ');
+  return sanitizePlainText(withoutTags);
 }
 
 function escapeHtml(content) {
@@ -1195,61 +1222,51 @@ ipcMain.handle('preview:load', async (_event, options = {}) => {
 
   try {
     const buffer = await fsPromises.readFile(filePath);
-    let azw3DrmProtected = false;
+    const payload = {
+      success: true,
+      kind: 'foliate',
+      mime: getMimeForFormat(format),
+      data: buffer.toString('base64')
+    };
+
+    let textPreview = '';
     if (format === 'pdf') {
-      return {
-        success: true,
-        kind: 'dataUrl',
-        mime: 'application/pdf',
-        data: `data:application/pdf;base64,${buffer.toString('base64')}`
-      };
-    }
-    if (format === 'txt') {
-      return { success: true, kind: 'text', content: sanitizePlainText(buffer.toString('utf8')) };
-    }
-    if (format === 'docx') {
+      // no additional processing required
+    } else if (format === 'txt') {
+      textPreview = sanitizePlainText(buffer.toString('utf8'));
+    } else if (format === 'docx') {
       const result = await mammoth.convertToHtml({ buffer });
-      return { success: true, kind: 'html', content: sanitizeHtmlSnippet(result.value || '') };
-    }
-    if (format === 'epub') {
-      return {
-        success: true,
-        kind: 'foliate',
-        mime: 'application/epub+zip',
-        data: buffer.toString('base64')
-      };
-    }
-    if (format === 'azw3') {
-      azw3DrmProtected = isAzw3DrmProtected(buffer);
-      if (azw3DrmProtected) {
+      textPreview = htmlToPlainText(result.value || '');
+    } else if (format === 'epub') {
+      const html = await extractEpubPreview(buffer);
+      if (html) {
+        textPreview = htmlToPlainText(html);
+      }
+    } else if (format === 'azw3') {
+      if (isAzw3DrmProtected(buffer)) {
         return { success: false, error: 'Preview unavailable: AZW3 file is DRM-protected.' };
       }
       const viewData = await extractAzw3ViewData(buffer);
       if (Array.isArray(viewData?.spine) && viewData.spine.length) {
-        return {
-          success: true,
-          kind: 'foliate',
-          mime: 'application/epub+zip',
-          data: buffer.toString('base64'),
-          book: viewData
-        };
+        payload.book = viewData;
       }
       const html = await extractAzw3Preview(buffer);
       if (html) {
-        return { success: true, kind: 'html', content: html };
+        textPreview = htmlToPlainText(html);
+      } else {
+        textPreview = extractReadableText(buffer);
       }
+    } else if (format === 'mobi') {
+      textPreview = extractReadableText(buffer);
+    } else {
+      textPreview = extractReadableText(buffer);
     }
-    if (format === 'mobi' || (format === 'azw3' && !azw3DrmProtected)) {
-      const text = extractReadableText(buffer);
-      if (text) {
-        return { success: true, kind: 'text', content: text };
-      }
+
+    if (textPreview) {
+      payload.textPreview = textPreview;
     }
-    const fallbackText = extractReadableText(buffer);
-    if (fallbackText) {
-      return { success: true, kind: 'text', content: fallbackText };
-    }
-    return { success: false, error: 'Unsupported preview format' };
+
+    return payload;
   } catch (error) {
     console.error('Failed to load preview asset', error);
     return { success: false, error: error.message };
