@@ -31,14 +31,8 @@ contextBridge.exposeInMainWorld('api', {
   openFoliate(options) {
     return ipcRenderer.invoke('foliate:open', options);
   },
-  ttsSetAuthToken(token) {
-    return ipcRenderer.invoke('tts:set-auth-token', token);
-  },
-  ttsListVoices() {
-    return ipcRenderer.invoke('tts:list-voices');
-  },
-  ttsSynthesize(options) {
-    return ipcRenderer.invoke('tts:synthesize', options);
+  revealInFileManager(targetPath) {
+    return ipcRenderer.invoke('file:reveal', { path: targetPath });
   },
   onMenuCommand(callback) {
     if (typeof callback !== 'function') {
