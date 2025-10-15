@@ -310,18 +310,6 @@ const root = document.getElementById('root');
 const DROP_ZONE_SELECTOR = '.wizard-dropzone, .wizard-cover-dropzone';
 let dragGuardsRegistered = false;
 
-const ttsEngine = {
-  supported: !!(window.api?.ttsListVoices && window.api?.ttsSynthesize),
-  initializing: false,
-  initialized: false,
-  pending: false,
-  voices: [],
-  audioContext: null,
-  source: null,
-  requestId: 0,
-  errorMessage: null
-};
-
 const state = {
   locale: defaultLocale,
   showWizard: false,
@@ -342,7 +330,6 @@ const state = {
   }, {}),
   previewStates: initialPreviewStates,
   previewAssets: {},
-  ttsState: { playing: false, voice: 'default', speed: 1, highlight: true, status: 'idle' },
   exportState: { destination: '~/Documents/Local-Bookshelf/Exports', includeMetadata: true, status: 'idle', progress: 0 },
   aiSessions: {},
   jobs: [],
@@ -496,7 +483,6 @@ function serializeState() {
     bookmarks,
     previewStates: JSON.parse(JSON.stringify(state.previewStates || {})),
     settings: JSON.parse(JSON.stringify(state.settings || {})),
-    ttsState: JSON.parse(JSON.stringify(state.ttsState || {})),
     exportState: JSON.parse(JSON.stringify(state.exportState || {})),
     aiSessions: JSON.parse(JSON.stringify(state.aiSessions || {})),
     selectedCollectionId: state.selectedCollectionId,
@@ -542,6 +528,9 @@ function applyPersistedState(persisted) {
         filtersCollapsed:
           typeof preference.filtersCollapsed === 'boolean' ? preference.filtersCollapsed : true
       };
+      if (typeof state.preferences[collectionId].pendingSearch !== 'string') {
+        state.preferences[collectionId].pendingSearch = preference.search || '';
+      }
     });
   }
   if (persisted.bookmarks) {
@@ -554,18 +543,6 @@ function applyPersistedState(persisted) {
   }
   if (persisted.settings) {
     state.settings = { ...state.settings, ...persisted.settings };
-  }
-  if (persisted.ttsState) {
-    state.ttsState = { ...state.ttsState, ...persisted.ttsState };
-  }
-  if (!state.ttsState.status) {
-    state.ttsState.status = 'idle';
-  }
-  if (!state.ttsState.voice) {
-    state.ttsState.voice = 'default';
-  }
-  if (!state.ttsState.speed) {
-    state.ttsState.speed = 1;
   }
   if (persisted.exportState) {
     state.exportState = { ...state.exportState, ...persisted.exportState };
@@ -947,9 +924,6 @@ function setActivePage(page) {
         entry.fullscreen = false;
       }
     });
-    if (state.ttsState.playing) {
-      stopTts(false);
-    }
     state.metadataEditor = null;
   }
   renderApp();
@@ -1013,6 +987,7 @@ function ensurePreferences(collectionId) {
       pageSize: meta.pagination || state.settings.paginationDefault,
       page: 1,
       search: '',
+      pendingSearch: '',
       classification: new Set(),
       format: 'all',
       yearFrom: 2000,
@@ -1031,6 +1006,9 @@ function ensurePreferences(collectionId) {
     }
     if (typeof preference.filtersCollapsed !== 'boolean') {
       preference.filtersCollapsed = true;
+    }
+    if (typeof preference.pendingSearch !== 'string') {
+      preference.pendingSearch = preference.search || '';
     }
   }
   return state.preferences[collectionId];
@@ -1510,7 +1488,6 @@ function createBookFromFile(record, collectionId) {
   const summary = `${title} · Imported from local filesystem · 本地文件导入`;
   const previewSource = extension ? extension.toUpperCase() : 'FILE';
   const preview = `Preview generated from ${previewSource} · 来自 ${previewSource} 文件的预览`;
-  const ttsFormats = new Set(['pdf', 'epub', 'mobi', 'azw3', 'txt', 'doc', 'docx']);
   const exportFormats = new Set(['pdf', 'epub']);
 
   return {
@@ -1530,7 +1507,6 @@ function createBookFromFile(record, collectionId) {
     preview,
     coverUrl: null,
     bookmarks: [],
-    tts: ttsFormats.has(extension),
     exportable: exportFormats.has(extension),
     metadataUpdatedAt: modified.toISOString(),
     path: filePath,
@@ -2733,20 +2709,6 @@ function renderCollectionPage(pack) {
 }
 function renderFilters(collectionId, preferences, pack) {
   const filters = createElement('div', { className: 'filters-panel expanded' });
-  const searchSection = createElement('div', { className: 'filter-section search-section' });
-  const searchInput = createElement('input', {
-    className: 'search-input',
-    attributes: { type: 'search', placeholder: pack.collectionDetail.searchPlaceholder }
-  });
-  searchInput.value = preferences.search;
-  searchInput.addEventListener('input', (event) => {
-    preferences.search = event.target.value;
-    preferences.page = 1;
-    renderApp();
-  });
-  searchSection.appendChild(searchInput);
-  filters.appendChild(searchSection);
-
   const classificationSection = createElement('div', { className: 'filter-section classification-section' });
   classificationSection.appendChild(
     createElement('span', { className: 'filter-section-label', text: pack.collectionDetail.filters.classification })
@@ -2867,6 +2829,7 @@ function renderFilters(collectionId, preferences, pack) {
   resetButton.type = 'button';
   resetButton.addEventListener('click', () => {
     preferences.search = '';
+    preferences.pendingSearch = '';
     preferences.classification.clear();
     preferences.format = 'all';
     preferences.yearFrom = 2000;
@@ -2877,6 +2840,63 @@ function renderFilters(collectionId, preferences, pack) {
   footer.appendChild(resetButton);
   filters.appendChild(footer);
   return filters;
+}
+
+function renderCollectionSearch(preferences, pack, activeFilters) {
+  const container = createElement('div', { className: 'collection-search-bar' });
+  const searchInput = createElement('input', {
+    className: 'search-input',
+    attributes: { type: 'search', placeholder: pack.collectionDetail.searchPlaceholder }
+  });
+  searchInput.value = typeof preferences.pendingSearch === 'string' ? preferences.pendingSearch : preferences.search;
+
+  const applySearch = () => {
+    const value = (preferences.pendingSearch || '').trim();
+    const previous = preferences.search;
+    preferences.search = value;
+    preferences.pendingSearch = value;
+    if (previous !== value) {
+      preferences.page = 1;
+    }
+    renderApp();
+  };
+
+  searchInput.addEventListener('input', (event) => {
+    preferences.pendingSearch = event.target.value;
+  });
+  searchInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      applySearch();
+    }
+  });
+
+  const toggleButton = createElement('button', {
+    className: `filter-toggle-button${preferences.filtersCollapsed ? ' collapsed' : ''}`,
+    text: pack.collectionDetail.filtersToggle
+  });
+  toggleButton.type = 'button';
+  toggleButton.setAttribute('aria-label', pack.collectionDetail.filtersToggle);
+  toggleButton.setAttribute('data-count', `${activeFilters}`);
+  if (activeFilters > 0) {
+    toggleButton.classList.add('has-active');
+  }
+  toggleButton.addEventListener('click', () => {
+    preferences.filtersCollapsed = !preferences.filtersCollapsed;
+    renderApp();
+  });
+
+  const searchButton = createElement('button', {
+    className: 'primary-button search-apply-button',
+    text: pack.collectionDetail.searchButton || 'Search'
+  });
+  searchButton.type = 'button';
+  searchButton.addEventListener('click', applySearch);
+
+  container.appendChild(searchInput);
+  container.appendChild(toggleButton);
+  container.appendChild(searchButton);
+  return container;
 }
 
 function applyBookFilters(books, preferences) {
@@ -3202,7 +3222,11 @@ function renderPaginationControls(preferences, totalItems, pack) {
 
   container.appendChild(createElement('span', { text: `${pack.collectionDetail.pagination.label}` }));
   container.appendChild(sizeSelect);
-  container.appendChild(createElement('span', { text: `${preferences.page} / ${totalPages}` }));
+  const statusTemplate = pack.collectionDetail.pagination.status || '{current} / {total}';
+  const statusText = statusTemplate
+    .replace('{current}', String(preferences.page))
+    .replace('{total}', String(totalPages));
+  container.appendChild(createElement('span', { className: 'pagination-status', text: statusText }));
   container.appendChild(prevButton);
   container.appendChild(nextButton);
   return container;
@@ -3420,23 +3444,12 @@ function renderCollectionDetail(pack) {
 
   const side = createElement('div', { className: 'collection-hero-side' });
   side.appendChild(renderBookCover(heroBook, 'avatar'));
-  const filterToggle = createElement('button', {
-    className: `filter-icon-button${preferences.filtersCollapsed ? ' collapsed' : ''}`,
-    text: '🎛️'
-  });
-  filterToggle.type = 'button';
-  filterToggle.setAttribute('aria-label', pack.collectionDetail.filtersToggle);
-  filterToggle.title = pack.collectionDetail.filtersToggle;
-  filterToggle.setAttribute('data-count', `${activeFilters}`);
-  filterToggle.addEventListener('click', () => {
-    preferences.filtersCollapsed = !preferences.filtersCollapsed;
-    renderApp();
-  });
-  side.appendChild(filterToggle);
 
   hero.appendChild(info);
   hero.appendChild(side);
   section.appendChild(hero);
+
+  section.appendChild(renderCollectionSearch(preferences, pack, activeFilters));
 
   if (preferences.filtersCollapsed && activeFilters > 0) {
     const summary = createElement('div', { className: 'filter-summary' });
@@ -4293,6 +4306,11 @@ function renderPreviewPage(pack) {
   header.appendChild(headerActions);
   page.appendChild(header);
 
+  const fileDetails = renderPreviewFileDetails(pack, book);
+  if (fileDetails) {
+    page.appendChild(fileDetails);
+  }
+
   const layout = createElement('div', { className: 'preview-layout' });
   const mainColumn = createElement('div', { className: 'preview-main' });
   mainColumn.appendChild(createPreviewSection(pack, book, previewState));
@@ -4300,7 +4318,6 @@ function renderPreviewPage(pack) {
 
   const sideColumn = createElement('aside', { className: 'preview-side' });
   sideColumn.appendChild(renderEditableCover(book, pack));
-  sideColumn.appendChild(renderTtsPanel(pack, book));
   sideColumn.appendChild(renderMetadataCard(pack, book));
   layout.appendChild(sideColumn);
   page.appendChild(layout);
@@ -4308,212 +4325,129 @@ function renderPreviewPage(pack) {
   return page;
 }
 
-function getNarrationText(book) {
+function getBookFileName(book) {
   if (!book) {
     return '';
   }
-  const assetText = getPreviewAssetText(book);
-  if (assetText) {
-    return trimPreviewText(assetText);
-  }
-  const previewText = getBookPreviewText(book);
-  if (previewText) {
-    return trimPreviewText(previewText);
-  }
-  return trimPreviewText(getBookSummaryText(book));
-}
-
-async function initializeTtsEngine(force = false) {
-  if (!ttsEngine.supported || ttsEngine.initializing) {
-    return;
-  }
-  if (ttsEngine.initialized && !force) {
-    return;
-  }
-  ttsEngine.initializing = true;
-  if (force) {
-    ttsEngine.errorMessage = null;
-  }
-  try {
-    const response = await window.api.ttsListVoices();
-    if (response?.success && Array.isArray(response.voices)) {
-      ttsEngine.voices = response.voices.map((voice) => ({
-        id: voice.id,
-        label: voice.label || voice.name || voice.id,
-        language: voice.language || voice.lang || 'en'
-      }));
-      if (!ttsEngine.voices.length) {
-        ttsEngine.voices.push({ id: 'default', label: 'Default', language: 'en' });
-      }
-      if (!state.ttsState.voice || !ttsEngine.voices.some((voice) => voice.id === state.ttsState.voice)) {
-        state.ttsState.voice = ttsEngine.voices[0].id;
-      }
-      ttsEngine.initialized = true;
-      ttsEngine.errorMessage = null;
-    } else {
-      ttsEngine.errorMessage = response?.error || 'unavailable';
+  if (book.path && typeof book.path === 'string') {
+    const segments = book.path.split(/[\\/]/).filter(Boolean);
+    const candidate = segments.pop();
+    if (candidate) {
+      return candidate;
     }
-  } catch (error) {
-    console.warn('Failed to initialize TTS engine', error);
-    ttsEngine.errorMessage = error?.message || 'unavailable';
-  } finally {
-    ttsEngine.initializing = false;
-    renderApp();
   }
+  if (book.title) {
+    const extension = book.format ? `.${book.format}` : '';
+    return `${book.title}${extension}`;
+  }
+  return book.id || '';
 }
 
-function ensureAudioContext() {
-  if (!ttsEngine.supported) {
+function getDirectoryPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    return '';
+  }
+  const trimmed = filePath.replace(/[\\/]+$/, '');
+  const index = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  if (index === -1) {
+    return '';
+  }
+  return trimmed.slice(0, index);
+}
+
+function splitDirectorySegments(directoryPath) {
+  if (!directoryPath) {
+    return [];
+  }
+  if (/^\\\\/.test(directoryPath)) {
+    const parts = directoryPath.slice(2).split(/\\+/).filter(Boolean);
+    if (!parts.length) {
+      return ['\\\\'];
+    }
+    const [server, ...rest] = parts;
+    return [`\\\\${server}`, ...rest];
+  }
+  if (/^[A-Za-z]:/.test(directoryPath)) {
+    return directoryPath.split(/\\+/).filter(Boolean);
+  }
+  const normalized = directoryPath.replace(/\\/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
+  if (normalized.startsWith('/')) {
+    return ['/', ...parts];
+  }
+  return parts;
+}
+
+function renderPreviewFileDetails(pack, book) {
+  if (!book) {
     return null;
   }
-  if (!ttsEngine.audioContext) {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) {
-      return null;
-    }
-    ttsEngine.audioContext = new AudioContextClass();
-  }
-  return ttsEngine.audioContext;
-}
+  const container = createElement('div', { className: 'preview-file-info' });
+  const nameRow = createElement('div', { className: 'preview-file-row name-row' });
+  nameRow.appendChild(
+    createElement('span', { className: 'preview-file-label', text: pack.previewPanel.fileNameLabel || 'File' })
+  );
+  const fileNameValue = getBookFileName(book) || (pack.previewPanel.unknownFile || 'Unknown file');
+  nameRow.appendChild(createElement('span', { className: 'preview-file-value', text: fileNameValue }));
+  container.appendChild(nameRow);
 
-function base64ToArrayBuffer(base64) {
-  const binary = window.atob(base64);
-  const length = binary.length;
-  const bytes = new Uint8Array(length);
-  for (let i = 0; i < length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-function stopTts(shouldRender = true) {
-  ttsEngine.requestId += 1;
-  ttsEngine.pending = false;
-  if (ttsEngine.source) {
-    try {
-      ttsEngine.source.stop();
-    } catch (error) {
-      console.warn('Failed to stop TTS playback', error);
-    }
-    try {
-      ttsEngine.source.disconnect();
-    } catch (error) {
-      console.warn('Failed to release TTS audio nodes', error);
-    }
-  }
-  ttsEngine.source = null;
-  state.ttsState.playing = false;
-  state.ttsState.status = 'idle';
-  if (shouldRender) {
-    renderApp();
-  }
-}
-
-function startTts(pack, book) {
-  if (!ttsEngine.supported) {
-    showToast(pack.ttsPanel.unsupported);
-    return;
-  }
-  initializeTtsEngine();
-  if (ttsEngine.initializing) {
-    showToast(pack.ttsPanel.initializing);
-    return;
-  }
-  if (ttsEngine.pending && state.ttsState.status === 'generating') {
-    showToast(pack.ttsPanel.generatingMessage || pack.ttsPanel.loading);
-    return;
-  }
-  const asset = ensurePreviewAsset(book);
-  if (asset && asset.status === 'loading') {
-    showToast(pack.ttsPanel.loading);
-    return;
-  }
-  const narration = getNarrationText(book);
-  if (!narration) {
-    showToast(pack.ttsPanel.noText);
-    return;
-  }
-  const context = ensureAudioContext();
-  if (!context) {
-    showToast(pack.ttsPanel.unsupported);
-    return;
-  }
-  const requestId = ++ttsEngine.requestId;
-  ttsEngine.pending = true;
-  state.ttsState.status = 'generating';
-  state.ttsState.playing = false;
-  renderApp();
-  window.api
-    .ttsSynthesize({ text: narration, voice: state.ttsState.voice })
-    .then(async (response) => {
-      if (requestId !== ttsEngine.requestId) {
-        return;
-      }
-      if (!response?.success) {
-        throw response?.error || new Error('unavailable');
-      }
-      const arrayBuffer = base64ToArrayBuffer(response.audio);
-      const audioContext = ensureAudioContext();
-      if (!audioContext) {
-        throw new Error('Audio unavailable');
-      }
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume();
-      }
-      return new Promise((resolve, reject) => {
-        audioContext.decodeAudioData(
-          arrayBuffer,
-          (buffer) => resolve({ buffer, sampleRate: response.sampleRate }),
-          (error) => reject(error)
-        );
-      });
-    })
-    .then((payload) => {
-      if (!payload || requestId !== ttsEngine.requestId) {
-        return;
-      }
-      const audioContext = ensureAudioContext();
-      if (!audioContext) {
-        throw new Error('Audio unavailable');
-      }
-      const source = audioContext.createBufferSource();
-      source.buffer = payload.buffer;
-      source.playbackRate.value = Number(state.ttsState.speed) || 1;
-      source.onended = () => {
-        if (requestId !== ttsEngine.requestId) {
-          return;
+  const pathRow = createElement('div', { className: 'preview-file-row path-row' });
+  pathRow.appendChild(
+    createElement('span', { className: 'preview-file-label', text: pack.previewPanel.filePathLabel || 'Path' })
+  );
+  const directoryPath = getDirectoryPath(book.path);
+  if (directoryPath) {
+    const breadcrumb = createElement('div', { className: 'preview-path-breadcrumb' });
+    const segments = splitDirectorySegments(directoryPath);
+    if (segments.length) {
+      segments.forEach((segment, index) => {
+        breadcrumb.appendChild(createElement('span', { className: 'preview-path-segment', text: segment }));
+        if (index < segments.length - 1) {
+          breadcrumb.appendChild(createElement('span', { className: 'preview-path-separator', text: '›' }));
         }
-        state.ttsState.playing = false;
-        state.ttsState.status = 'idle';
-        ttsEngine.source = null;
-        renderApp();
-      };
-      source.connect(audioContext.destination);
-      ttsEngine.source = source;
-      ttsEngine.pending = false;
-      state.ttsState.playing = true;
-      state.ttsState.status = 'playing';
-      source.start(0);
-      renderApp();
-    })
-    .catch((error) => {
-      if (requestId !== ttsEngine.requestId) {
-        return;
+      });
+    } else {
+      breadcrumb.appendChild(createElement('span', { className: 'preview-path-segment', text: directoryPath }));
+    }
+    pathRow.appendChild(breadcrumb);
+  } else {
+    pathRow.appendChild(
+      createElement('span', {
+        className: 'preview-path-missing',
+        text: pack.previewPanel.pathUnavailable || 'Path unavailable'
+      })
+    );
+  }
+  container.appendChild(pathRow);
+
+  const actions = createElement('div', { className: 'preview-file-actions' });
+  const revealButton = createElement('button', {
+    className: 'ghost-button',
+    text: pack.previewPanel.revealInFolder || 'Open containing folder'
+  });
+  revealButton.type = 'button';
+  if (!book.path || !window.api?.revealInFileManager) {
+    revealButton.disabled = true;
+  }
+  revealButton.addEventListener('click', async () => {
+    if (!book.path || !window.api?.revealInFileManager) {
+      showToast(pack.previewPanel.pathUnavailable || 'Path unavailable');
+      return;
+    }
+    try {
+      const result = await window.api.revealInFileManager(book.path);
+      if (!result?.success) {
+        throw new Error(result?.error || 'unavailable');
       }
-      console.error('Failed to synthesize audio', error);
-      ttsEngine.pending = false;
-      state.ttsState.playing = false;
-      state.ttsState.status = 'idle';
-      const code = typeof error === 'string' ? error : error?.code || error?.message;
-      if (code === 'busy') {
-        showToast(pack.ttsPanel.busy);
-      } else if (code === 'empty') {
-        showToast(pack.ttsPanel.noText);
-      } else {
-        showToast(pack.ttsPanel.error);
-      }
-      renderApp();
-    });
+    } catch (error) {
+      console.error('Failed to reveal file location', error);
+      showToast(pack.previewPanel.openFolderError || 'Unable to open containing folder.');
+    }
+  });
+  actions.appendChild(revealButton);
+  container.appendChild(actions);
+
+  return container;
 }
 
 function renderEditableMetadataRow(pack, book, field, label, value) {
@@ -4576,7 +4510,21 @@ function renderEditableCover(book, pack) {
 function renderMetadataCard(pack, book) {
   const metadataPack = pack.metadataEditor || {};
   const card = createElement('div', { className: 'preview-metadata editable' });
-  card.appendChild(createElement('h4', { text: pack.previewPanel.metadataTitle }));
+  const headerRow = createElement('div', { className: 'metadata-card-header' });
+  headerRow.appendChild(createElement('h4', { text: pack.previewPanel.metadataTitle }));
+  const refreshButton = createElement('button', {
+    className: 'ghost-button small',
+    text: pack.previewPanel.refreshMetadataButton || pack.collectionDetail.refresh
+  });
+  refreshButton.type = 'button';
+  refreshButton.addEventListener('click', () => {
+    if (!state.selectedCollectionId) {
+      return;
+    }
+    refreshMetadata(state.selectedCollectionId, [book.id]);
+  });
+  headerRow.appendChild(refreshButton);
+  card.appendChild(headerRow);
   card.appendChild(
     renderEditableMetadataRow(
       pack,
@@ -4613,115 +4561,6 @@ function renderMetadataCard(pack, book) {
     })
   );
   return card;
-}
-
-function renderTtsPanel(pack, book) {
-  const container = createElement('div', { className: 'tts-panel' });
-  container.appendChild(createElement('h4', { text: pack.ttsPanel.title }));
-  initializeTtsEngine();
-  const controls = createElement('div', { className: 'tts-controls' });
-  const supported = ttsEngine.supported;
-  const hasError = !!ttsEngine.errorMessage;
-  const initializing = ttsEngine.initializing;
-  const isPlaying = state.ttsState.playing;
-  const isGenerating = state.ttsState.status === 'generating';
-  const controlsDisabled = !supported || initializing || hasError;
-  const buttonLabel = isPlaying ? pack.ttsPanel.stop : pack.ttsPanel.play;
-  const unavailableLabel = pack.ttsPanel.unavailableLabel || 'Unavailable';
-  const playButton = createElement('button', { text: isGenerating ? pack.ttsPanel.stop : buttonLabel });
-  playButton.type = 'button';
-  playButton.disabled = controlsDisabled && !isPlaying && !isGenerating;
-  playButton.addEventListener('click', () => {
-    if (state.ttsState.playing || state.ttsState.status === 'generating') {
-      stopTts();
-    } else {
-      startTts(pack, book);
-    }
-  });
-  const speedSelect = createElement('select', { className: 'tts-select' });
-  speedSelect.disabled = controlsDisabled || isGenerating;
-  [0.5, 0.75, 1, 1.25, 1.5, 2].forEach((value) => {
-    const label = `${value}×`;
-    const option = createElement('option', { text: label });
-    option.value = value;
-    if (Number(state.ttsState.speed || 1) === value) {
-      option.selected = true;
-    }
-    speedSelect.appendChild(option);
-  });
-  speedSelect.addEventListener('change', (event) => {
-    const value = Number(event.target.value) || 1;
-    state.ttsState.speed = value;
-    if (ttsEngine.source) {
-      try {
-        ttsEngine.source.playbackRate.value = value;
-      } catch (error) {
-        console.warn('Failed to adjust playback rate', error);
-      }
-    }
-    renderApp();
-  });
-  const voiceSelect = createElement('select', { className: 'tts-select' });
-  const hasVoices = ttsEngine.voices.length > 0;
-  voiceSelect.disabled = controlsDisabled || !hasVoices || isGenerating;
-  if (hasVoices) {
-    ttsEngine.voices.forEach((voice) => {
-      const languageLabel =
-        voice.language && typeof voice.language === 'string'
-          ? voice.language.toUpperCase()
-          : voice.language || '';
-      const label = languageLabel ? `${voice.label} · ${languageLabel}` : voice.label;
-      const option = createElement('option', { text: label });
-      option.value = voice.id;
-      if (state.ttsState.voice === voice.id) {
-        option.selected = true;
-      }
-      voiceSelect.appendChild(option);
-    });
-  } else {
-    voiceSelect.appendChild(createElement('option', { text: initializing ? pack.ttsPanel.initializing : pack.ttsPanel.loading }));
-  }
-  voiceSelect.addEventListener('change', (event) => {
-    state.ttsState.voice = event.target.value;
-    if (state.ttsState.playing) {
-      stopTts(false);
-      startTts(pack, book);
-    } else {
-      renderApp();
-    }
-  });
-  const highlightToggle = createElement('label', { className: 'highlight-toggle' });
-  const highlightInput = createElement('input', { attributes: { type: 'checkbox' } });
-  highlightInput.checked = state.ttsState.highlight;
-  highlightInput.disabled = controlsDisabled;
-  highlightInput.addEventListener('change', (event) => {
-    state.ttsState.highlight = event.target.checked;
-    renderApp();
-  });
-  highlightToggle.appendChild(highlightInput);
-  highlightToggle.appendChild(createElement('span', { text: pack.ttsPanel.highlight }));
-  controls.appendChild(playButton);
-  controls.appendChild(createElement('span', { text: `${pack.ttsPanel.speed}` }));
-  controls.appendChild(speedSelect);
-  controls.appendChild(createElement('span', { text: `${pack.ttsPanel.voice}` }));
-  controls.appendChild(voiceSelect);
-  controls.appendChild(highlightToggle);
-  container.appendChild(controls);
-  if (!supported) {
-    container.appendChild(createElement('p', { className: 'tts-warning', text: pack.ttsPanel.unsupported }));
-  } else if (hasError) {
-    const detail = ttsEngine.errorMessage ? ` (${ttsEngine.errorMessage})` : '';
-    container.appendChild(createElement('p', { className: 'tts-warning', text: `${pack.ttsPanel.error}${detail}` }));
-  } else if (initializing) {
-    container.appendChild(createElement('p', { className: 'tts-helper', text: pack.ttsPanel.initializing }));
-  } else if (isGenerating) {
-    container.appendChild(createElement('p', { className: 'tts-helper', text: pack.ttsPanel.generating }));
-  } else if (ttsEngine.pending) {
-    container.appendChild(createElement('p', { className: 'tts-helper', text: pack.ttsPanel.loading }));
-  } else if (!hasVoices) {
-    container.appendChild(createElement('p', { className: 'tts-helper', text: pack.ttsPanel.loading }));
-  }
-  return container;
 }
 
 

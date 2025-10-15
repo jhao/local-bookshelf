@@ -227,6 +227,7 @@
         "subtitle": "Search, filter, and manage every title inside this shelf.",
         "lastScanLabel": "Last scan",
         "searchPlaceholder": "Search title, author, notes…",
+        "searchButton": "Search",
         "filtersToggle": "Show filters",
         "activeFilters": "Active filters",
         "directories": "Included directories",
@@ -256,7 +257,8 @@
         "pagination": {
           "label": "Items per page",
           "previous": "Previous",
-          "next": "Next"
+          "next": "Next",
+          "status": "Page {current} of {total}"
         },
         "bulkActions": {
           "title": "Bulk actions",
@@ -305,10 +307,17 @@
         "back": "Back to collection",
         "export": "Export selection",
         "metadataTitle": "Book details",
+        "refreshMetadataButton": "Update details from the internet",
         "formatLabel": "Format",
         "sizeLabel": "Size",
         "pagesLabel": "Pages",
         "updatedLabel": "Metadata updated",
+        "fileNameLabel": "File",
+        "filePathLabel": "Path",
+        "unknownFile": "Unknown file",
+        "revealInFolder": "Show in folder",
+        "pathUnavailable": "File path unavailable.",
+        "openFolderError": "Unable to open containing folder.",
         "loadingPreview": "Loading reader…",
         "unavailable": "Preview unavailable.",
         "enterFullscreen": "Enter fullscreen",
@@ -326,28 +335,9 @@
         "foliateZoomLabel": "Zoom",
         "foliateZoomFitWidth": "Fit width",
         "foliateZoomFitPage": "Fit page",
-        "foliateZoomActual": "100%",
-        "foliateZoomLarge": "150%"
-      },
-      "ttsPanel": {
-        "title": "Text-to-Speech",
-        "play": "Play",
-        "pause": "Pause",
-        "resume": "Resume",
-        "stop": "Stop",
-        "voice": "Voice",
-        "speed": "Speed",
-        "highlight": "Highlight narration",
-        "unsupported": "Local narration is not available on this device.",
-        "loading": "Warming up the built-in synthesizer…",
-        "noText": "No readable text is available for narration.",
-        "error": "Unable to synthesize narration.",
-        "initializing": "Preparing local voices…",
-        "generating": "Synthesizing speech…",
-        "generatingMessage": "Voice synthesis in progress…",
-        "busy": "Voice engine is busy. Please try again shortly.",
-        "unavailableLabel": "Feature unavailable"
-      },
+      "foliateZoomActual": "100%",
+      "foliateZoomLarge": "150%"
+    },
       "exportDialog": {
         "title": "Export selection",
         "subtitle": "Choose a destination for the generated files.",
@@ -639,6 +629,7 @@
         "subtitle": "在此检索、过滤并管理书架中的每一本书。",
         "lastScanLabel": "最近扫描",
         "searchPlaceholder": "搜索标题、作者或笔记…",
+        "searchButton": "检索",
         "filtersToggle": "显示筛选",
         "activeFilters": "已选条件",
         "directories": "覆盖目录",
@@ -668,7 +659,8 @@
         "pagination": {
           "label": "每页数量",
           "previous": "上一页",
-          "next": "下一页"
+          "next": "下一页",
+          "status": "第 {current} 页 / 共 {total} 页"
         },
         "bulkActions": {
           "title": "批量操作",
@@ -717,10 +709,17 @@
         "back": "返回收藏集",
         "export": "导出所选",
         "metadataTitle": "图书信息",
+        "refreshMetadataButton": "从互联网更新信息",
         "formatLabel": "格式",
         "sizeLabel": "大小",
         "pagesLabel": "页数",
         "updatedLabel": "元数据更新时间",
+        "fileNameLabel": "文件",
+        "filePathLabel": "路径",
+        "unknownFile": "未知文件",
+        "revealInFolder": "在文件夹中打开",
+        "pathUnavailable": "无法获取文件路径。",
+        "openFolderError": "无法打开文件所在的文件夹。",
         "loadingPreview": "正在加载阅读器…",
         "unavailable": "暂无法预览。",
         "enterFullscreen": "进入全屏",
@@ -740,25 +739,6 @@
         "foliateZoomFitPage": "适应页面",
         "foliateZoomActual": "100%",
         "foliateZoomLarge": "150%"
-      },
-      "ttsPanel": {
-        "title": "文本转语音",
-        "play": "播放",
-        "pause": "暂停",
-        "resume": "继续",
-        "stop": "停止",
-        "voice": "声音",
-        "speed": "语速",
-        "highlight": "高亮朗读文本",
-        "unsupported": "当前设备暂不支持本地朗读。",
-        "loading": "正在预热内置语音引擎…",
-        "noText": "没有可朗读的文本内容。",
-        "error": "无法生成语音。",
-        "initializing": "正在准备本地音色…",
-        "generating": "正在合成语音…",
-        "generatingMessage": "语音合成进行中…",
-        "busy": "语音引擎正忙，请稍后重试。",
-        "unavailableLabel": "功能不可用"
       },
       "exportDialog": {
         "title": "导出选中图书",
@@ -1037,7 +1017,6 @@
           64,
           214
         ],
-        "tts": true,
         "exportable": true
       },
       {
@@ -1061,7 +1040,6 @@
           23,
           198
         ],
-        "tts": true,
         "exportable": true
       },
       {
@@ -1086,7 +1064,6 @@
           256,
           401
         ],
-        "tts": false,
         "exportable": true
       },
       {
@@ -1109,7 +1086,6 @@
         "bookmarks": [
           48
         ],
-        "tts": true,
         "exportable": true
       }
     ],
@@ -1135,7 +1111,6 @@
           56,
           233
         ],
-        "tts": true,
         "exportable": true
       },
       {
@@ -1160,7 +1135,6 @@
           88,
           129
         ],
-        "tts": true,
         "exportable": true
       },
       {
@@ -1184,7 +1158,6 @@
           76,
           240
         ],
-        "tts": true,
         "exportable": true
       },
       {
@@ -1208,7 +1181,6 @@
           18,
           172
         ],
-        "tts": true,
         "exportable": true
       }
     ],
@@ -1235,7 +1207,6 @@
           132,
           205
         ],
-        "tts": true,
         "exportable": true
       },
       {
@@ -1259,7 +1230,6 @@
           38,
           110
         ],
-        "tts": true,
         "exportable": true
       },
       {
@@ -1284,7 +1254,6 @@
           97,
           146
         ],
-        "tts": true,
         "exportable": true
       },
       {
@@ -1309,7 +1278,6 @@
           241,
           322
         ],
-        "tts": true,
         "exportable": true
       }
     ]

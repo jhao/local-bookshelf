@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, screen, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const util = require('util');
@@ -20,7 +20,6 @@ const {
   backupDatabase
 } = require('./database');
 
-const tts = require('./tts');
 const isDev = process.env.NODE_ENV !== 'production';
 const WINDOW_ASPECT_RATIO = 3 / 4;
 
@@ -160,7 +159,6 @@ function createWindow() {
   });
 
   mainWindowRef = mainWindow;
-  mainWindow.setAspectRatio(WINDOW_ASPECT_RATIO);
 
   applyMenuTemplate(mainWindow, currentLocale);
 
@@ -1162,34 +1160,23 @@ async function extractAzw3ViewData(buffer) {
   return empty;
 }
 
-ipcMain.handle('tts:set-auth-token', async () => ({ success: true }));
-
-ipcMain.handle('tts:list-voices', async () => {
-  try {
-    const voices = await tts.listVoices();
-    return { success: true, voices };
-  } catch (error) {
-    console.error('Failed to enumerate TTS voices', error);
-    return {
-      success: false,
-      error: error?.message || 'unavailable'
-    };
+ipcMain.handle('file:reveal', async (_event, options = {}) => {
+  const targetPath = typeof options?.path === 'string' ? options.path : '';
+  if (!targetPath) {
+    return { success: false, error: 'Missing file path' };
   }
-});
-
-ipcMain.handle('tts:synthesize', async (_event, options = {}) => {
   try {
-    const result = await tts.synthesize(options.text || '', { voice: options.voice });
-    return { success: true, ...result };
+    await fsPromises.access(targetPath, fs.constants.F_OK);
   } catch (error) {
-    if (error?.code === 'BUSY') {
-      return { success: false, error: 'busy' };
-    }
-    if (error?.message === 'empty') {
-      return { success: false, error: 'empty' };
-    }
-    console.error('Failed to synthesize speech', error);
-    return { success: false, error: error?.message || 'unavailable' };
+    return { success: false, error: 'File not found' };
+  }
+
+  try {
+    shell.showItemInFolder(targetPath);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to reveal file in system file manager', error);
+    return { success: false, error: error?.message || 'Unable to open folder' };
   }
 });
 

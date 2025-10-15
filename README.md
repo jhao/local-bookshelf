@@ -5,7 +5,7 @@ This repository captures the product and technical specification for the Local B
 - A dashboard combining visual analytics with card-based collection management.
 - Multi-path collection creation with automatic metadata enrichment (classification, ISBN, publication year, cover art).
 - Rich browsing with search, tree-filtered classifications, pagination, and card/table layouts.
-- A universal reader that previews common ebook formats, exports to PDF, and provides configurable text-to-speech.
+- A universal reader that previews common ebook formats, exports to PDF, and reveals the source file directly in Finder/Explorer.
 - AI-assisted conversations grounded in the contents of each collection.
 
 See [`docs/functional_spec.md`](docs/functional_spec.md) for the detailed functional specification.
@@ -45,16 +45,6 @@ npm run serve
 ```
 
 This starts a lightweight static server on `http://localhost:4173` that serves the renderer bundle without launching Electron. 注意：在浏览器中打开时不会提供原生 API，仅供静态预览使用。
-
-### 5. Configure text-to-speech / 配置文本转语音
-
-The desktop app now ships with a lightweight, fully local speech synthesizer that does **not** depend on external model downloads or third-party accounts. 默认的桌面端语音功能已经改为内置的轻量级本地合成器，无需联网拉取模型，也不需要任何第三方账户。
-
-* Four preset voices are available (“Clear Narrator”, “Warm Storyteller”, “Bright Guide”, and “Retro Synth”). All of them run locally and can be switched directly from the reader sidebar. 提供四种预设音色，全部离线运行，可在阅读器侧边栏直接切换。
-* Because synthesis happens on the fly, no additional environment variables are required. 如果需要调整语速或音色，可直接在界面中修改，无需设置环境变量。
-* The previous Hugging Face token field has been removed. 如果你从旧版本迁移，可以放心忽略原来的 Hugging Face 配置。
-
-If you plan to integrate another TTS backend in the future, hook your implementation into `src/main/tts.js`. The renderer keeps the same IPC contract (`tts:list-voices` / `tts:synthesize`). 如需接入其他语音方案，可在 `src/main/tts.js` 中扩展实现，同时保持 `tts:list-voices` / `tts:synthesize` 的 IPC 接口即可。
 
 ## Packaging for Release / 发布打包
 

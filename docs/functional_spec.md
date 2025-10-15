@@ -14,7 +14,7 @@ Local Bookshelf is a cross-platform desktop application built with Electron and 
 3. As a Librarian, I can re-run scans to discover new books or refresh metadata.
 4. As a Researcher, I can browse collections via a dashboard that combines statistics and card-based shortcuts.
 5. As a Researcher, I can search by keyword, book title, classification, or publication year, and switch between card or table layouts with pagination.
-6. As a Reader, I can preview any supported book format, adjust zoom, toggle fullscreen, and control text-to-speech playback.
+6. As a Reader, I can preview any supported book format, adjust zoom, toggle fullscreen, and reveal the source file on disk.
 7. As a Reader, I can export any supported book to PDF.
 8. As a Reader, I can continue reading where I left off in a collection.
 9. As a Reader, I can start an AI chat about the contents of the books in a collection.
@@ -100,13 +100,12 @@ Local Bookshelf is a cross-platform desktop application built with Electron and 
 - `books`: id, collection_id, title, original_filename, file_path, format, isbn, classification, publication_year, author, page_count, cover_path, summary, created_at, updated_at.
 - `book_metadata_status`: id, book_id, enrichment_state, last_enriched_at, error_message.
 - `reading_progress`: id, book_id, last_position, last_opened_at.
-- `tts_preferences`: id, user_id (singleton), voice, speed.
 - `ai_sessions`: id, collection_id, created_at, updated_at, last_prompt, last_response.
 - `ai_citations`: id, ai_session_id, book_id, location_ref.
 
 ## Key Technology Choices
 - Electron + React + TypeScript frontend.
-- Node.js backend within Electron for filesystem access, metadata extraction, TTS integration.
+- Node.js backend within Electron for filesystem access and metadata extraction.
 - SQLite via `better-sqlite3` for synchronous desktop-friendly access.
 - Background jobs handled with Node worker threads or `bullmq`-style queue using SQLite.
 - Preview pipeline leveraging existing open-source renderers (PDF.js, epub.js) and optional bundled Calibre command-line tools.
