@@ -13,6 +13,7 @@ let mirrorsConfigured = false;
 
 const TOKEN_ENV_KEYS = [
   'HF_TOKEN',
+  'HF_ACCESS_TOKEN',
   'HF_HUB_TOKEN',
   'HF_API_TOKEN',
   'HUGGING_FACE_TOKEN',
@@ -178,8 +179,7 @@ function getModelCandidates() {
   const defaultModels = [
     'Xenova/xtts_v1.1',
     'Xenova/xtts',
-    'Xenova/vits-multilingual-mini',
-    'Xenova/vits-multilingual'
+    'Xenova/vits-multilingual-mini'
   ];
   const combined = [...preferredModels, ...defaultModels];
   const seen = new Set();
