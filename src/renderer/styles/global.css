@@ -1282,9 +1282,99 @@ body.preview-fullscreen-active {
   position: relative;
   flex: 1 1 auto;
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: stretch;
+  gap: 12px;
+  min-height: 320px;
+}
+
+.foliate-preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.foliate-preview-toolbar .foliate-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.foliate-toolbar-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.foliate-toolbar-label {
+  font-weight: 500;
+}
+
+.foliate-toolbar-button {
+  appearance: none;
+  border: 1px solid #cbd5f5;
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.foliate-toolbar-button:hover:not(:disabled) {
+  background-color: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
+.foliate-toolbar-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.foliate-toolbar-select {
+  border: 1px solid #cbd5f5;
+  border-radius: 8px;
+  padding: 6px 32px 6px 10px;
+  font-size: 0.9rem;
+  background: #ffffff url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="12" height="8" viewBox="0 0 12 8"%3E%3Cpath fill="%234256b5" d="M6 8a1 1 0 0 1-.707-.293l-5-5A1 1 0 0 1 1.707.293L6 4.586 10.293.293a1 1 0 1 1 1.414 1.414l-5 5A1 1 0 0 1 6 8Z"/%3E%3C/svg%3E') no-repeat right 10px center;
+  background-size: 12px 8px;
+  color: #1f2937;
+  min-width: 140px;
+}
+
+.foliate-toolbar-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.foliate-preview-viewport {
+  flex: 1 1 auto;
+  display: flex;
   align-items: stretch;
   justify-content: center;
-  min-height: 320px;
+  min-height: 0;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  overflow: hidden;
+  position: relative;
+}
+
+.foliate-preview-viewport .preview-loading,
+.foliate-preview-viewport .preview-error {
+  margin: auto;
+  padding: 24px;
+  text-align: center;
 }
 
 .preview-foliate-viewer foliate-reader,

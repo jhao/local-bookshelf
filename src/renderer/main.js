@@ -378,6 +378,9 @@ const persistence = {
   lastSerialized: null
 };
 
+const foliatePreviewCache = new Map();
+const foliateToolbarMap = new WeakMap();
+
 function getFileExtension(name) {
   if (!name || typeof name !== 'string') {
     return '';
@@ -3532,6 +3535,306 @@ function trimPreviewText(text, limit = 40000) {
   return `${normalized.slice(0, limit)}…`;
 }
 
+function syncFoliateViewLocale(view) {
+  const locale = state?.locale || 'en';
+  if (view && locale) {
+    view.setAttribute('lang', locale);
+  }
+}
+
+function updateFoliateToolbarLabels(toolbarState, pack) {
+  if (!toolbarState) {
+    return;
+  }
+  const previewPack = pack?.previewPanel || {};
+  const prevLabel =
+    previewPack.foliatePrev ||
+    previewPack.previousPage ||
+    'Previous page';
+  const nextLabel =
+    previewPack.foliateNext ||
+    previewPack.nextPage ||
+    'Next page';
+  if (toolbarState.prevButton) {
+    toolbarState.prevButton.textContent = prevLabel;
+    toolbarState.prevButton.setAttribute('aria-label', prevLabel);
+    toolbarState.prevButton.setAttribute('title', prevLabel);
+  }
+  if (toolbarState.nextButton) {
+    toolbarState.nextButton.textContent = nextLabel;
+    toolbarState.nextButton.setAttribute('aria-label', nextLabel);
+    toolbarState.nextButton.setAttribute('title', nextLabel);
+  }
+  const layoutLabel = previewPack.foliateLayoutLabel || 'Layout';
+  if (toolbarState.flowLabel) {
+    toolbarState.flowLabel.textContent = layoutLabel;
+  }
+  if (toolbarState.flowSelect) {
+    toolbarState.flowSelect.setAttribute('aria-label', layoutLabel);
+  }
+  if (toolbarState.flowOptions) {
+    if (toolbarState.flowOptions.paginated) {
+      toolbarState.flowOptions.paginated.textContent =
+        previewPack.foliateLayoutPaginated || previewPack.fitPage || 'Paginated';
+    }
+    if (toolbarState.flowOptions.scrolled) {
+      toolbarState.flowOptions.scrolled.textContent =
+        previewPack.foliateLayoutScrolled || 'Continuous';
+    }
+  }
+  const zoomLabel = previewPack.foliateZoomLabel || 'Zoom';
+  if (toolbarState.zoomLabel) {
+    toolbarState.zoomLabel.textContent = zoomLabel;
+  }
+  if (toolbarState.zoomSelect) {
+    toolbarState.zoomSelect.setAttribute('aria-label', zoomLabel);
+  }
+  if (toolbarState.zoomOptions) {
+    if (toolbarState.zoomOptions['fit-page']) {
+      toolbarState.zoomOptions['fit-page'].textContent =
+        previewPack.foliateZoomFitPage || previewPack.fitPage || 'Fit page';
+    }
+    if (toolbarState.zoomOptions['fit-width']) {
+      toolbarState.zoomOptions['fit-width'].textContent =
+        previewPack.foliateZoomFitWidth || previewPack.fitWidth || 'Fit width';
+    }
+    if (toolbarState.zoomOptions['1']) {
+      toolbarState.zoomOptions['1'].textContent =
+        previewPack.foliateZoomActual || '100%';
+    }
+    if (toolbarState.zoomOptions['1.5']) {
+      toolbarState.zoomOptions['1.5'].textContent =
+        previewPack.foliateZoomLarge || '150%';
+    }
+  }
+}
+
+function showFoliateLoadingState(toolbarState, pack) {
+  if (!toolbarState) {
+    return;
+  }
+  const loadingText =
+    pack?.previewPanel?.foliateLoading ||
+    pack?.previewPanel?.loadingPreview ||
+    'Loading reader…';
+  toolbarState.viewport.innerHTML = '';
+  toolbarState.viewport.appendChild(
+    createElement('p', { className: 'preview-loading', text: loadingText })
+  );
+  toolbarState.view = null;
+  if (toolbarState.prevButton) {
+    toolbarState.prevButton.disabled = true;
+  }
+  if (toolbarState.nextButton) {
+    toolbarState.nextButton.disabled = true;
+  }
+}
+
+function showFoliateErrorState(container, pack) {
+  const toolbarState = foliateToolbarMap.get(container);
+  const errorText =
+    pack?.previewPanel?.foliateFailed ||
+    pack?.previewPanel?.unavailable ||
+    'Foliate reader is unavailable.';
+  if (toolbarState) {
+    toolbarState.viewport.innerHTML = '';
+    toolbarState.viewport.appendChild(
+      createElement('p', { className: 'preview-error', text: errorText })
+    );
+    toolbarState.view = null;
+    if (toolbarState.prevButton) {
+      toolbarState.prevButton.disabled = true;
+    }
+    if (toolbarState.nextButton) {
+      toolbarState.nextButton.disabled = true;
+    }
+    if (toolbarState.flowSelect) {
+      toolbarState.flowSelect.disabled = true;
+    }
+    if (toolbarState.zoomSelect) {
+      toolbarState.zoomSelect.disabled = true;
+    }
+    if (toolbarState.flowGroup) {
+      toolbarState.flowGroup.hidden = false;
+    }
+    if (toolbarState.zoomGroup) {
+      toolbarState.zoomGroup.hidden = true;
+    }
+  } else {
+    container.innerHTML = '';
+    container.appendChild(
+      createElement('p', { className: 'preview-error', text: errorText })
+    );
+  }
+}
+
+function syncFoliateToolbarState(toolbarState, view) {
+  if (!toolbarState) {
+    return;
+  }
+  toolbarState.view = view || null;
+  const hasView = Boolean(view);
+  if (toolbarState.prevButton) {
+    toolbarState.prevButton.disabled = !hasView;
+  }
+  if (toolbarState.nextButton) {
+    toolbarState.nextButton.disabled = !hasView;
+  }
+  if (!hasView) {
+    if (toolbarState.flowSelect) {
+      toolbarState.flowSelect.disabled = true;
+    }
+    if (toolbarState.flowGroup) {
+      toolbarState.flowGroup.hidden = false;
+    }
+    if (toolbarState.zoomSelect) {
+      toolbarState.zoomSelect.disabled = true;
+    }
+    if (toolbarState.zoomGroup) {
+      toolbarState.zoomGroup.hidden = true;
+    }
+    return;
+  }
+
+  const isFixedLayout = Boolean(view.isFixedLayout);
+  if (toolbarState.flowGroup) {
+    toolbarState.flowGroup.hidden = isFixedLayout;
+  }
+  if (toolbarState.flowSelect) {
+    toolbarState.flowSelect.disabled = isFixedLayout;
+    if (!isFixedLayout) {
+      const currentFlow = view.renderer?.getAttribute?.('flow') || 'paginated';
+      toolbarState.flowSelect.value = currentFlow === 'scrolled' ? 'scrolled' : 'paginated';
+    }
+  }
+  if (toolbarState.zoomGroup) {
+    toolbarState.zoomGroup.hidden = !isFixedLayout;
+  }
+  if (toolbarState.zoomSelect) {
+    toolbarState.zoomSelect.disabled = !isFixedLayout;
+    if (isFixedLayout) {
+      let zoomValue = view.renderer?.getAttribute?.('zoom') || 'fit-page';
+      if (!toolbarState.zoomOptions?.[zoomValue]) {
+        const numericZoom = parseFloat(zoomValue);
+        if (!Number.isNaN(numericZoom)) {
+          zoomValue = numericZoom.toString();
+        } else {
+          zoomValue = 'fit-page';
+        }
+      }
+      if (!toolbarState.zoomOptions?.[zoomValue]) {
+        zoomValue = 'fit-page';
+      }
+      toolbarState.zoomSelect.value = zoomValue;
+    }
+  }
+}
+
+function initializeFoliateToolbar(container, pack) {
+  const toolbar = createElement('div', { className: 'foliate-preview-toolbar' });
+  toolbar.setAttribute('role', 'toolbar');
+  const navGroup = createElement('div', { className: 'foliate-toolbar-group foliate-toolbar-nav' });
+  const prevButton = createElement('button', { className: 'foliate-toolbar-button' });
+  prevButton.type = 'button';
+  prevButton.disabled = true;
+  const nextButton = createElement('button', { className: 'foliate-toolbar-button' });
+  nextButton.type = 'button';
+  nextButton.disabled = true;
+  navGroup.append(prevButton, nextButton);
+
+  const flowGroup = createElement('div', { className: 'foliate-toolbar-group foliate-toolbar-layout' });
+  const flowField = createElement('label', { className: 'foliate-toolbar-field' });
+  const flowLabel = createElement('span', { className: 'foliate-toolbar-label' });
+  const flowSelect = createElement('select', { className: 'foliate-toolbar-select' });
+  const flowPaginated = createElement('option', { attributes: { value: 'paginated' } });
+  const flowScrolled = createElement('option', { attributes: { value: 'scrolled' } });
+  flowSelect.append(flowPaginated, flowScrolled);
+  flowField.append(flowLabel, flowSelect);
+  flowGroup.append(flowField);
+
+  const zoomGroup = createElement('div', { className: 'foliate-toolbar-group foliate-toolbar-zoom' });
+  const zoomField = createElement('label', { className: 'foliate-toolbar-field' });
+  const zoomLabel = createElement('span', { className: 'foliate-toolbar-label' });
+  const zoomSelect = createElement('select', { className: 'foliate-toolbar-select' });
+  const zoomFitPage = createElement('option', { attributes: { value: 'fit-page' } });
+  const zoomFitWidth = createElement('option', { attributes: { value: 'fit-width' } });
+  const zoomActual = createElement('option', { attributes: { value: '1' } });
+  const zoomLarge = createElement('option', { attributes: { value: '1.5' } });
+  zoomSelect.append(zoomFitPage, zoomFitWidth, zoomActual, zoomLarge);
+  zoomField.append(zoomLabel, zoomSelect);
+  zoomGroup.append(zoomField);
+
+  toolbar.append(navGroup, flowGroup, zoomGroup);
+
+  const viewport = createElement('div', { className: 'foliate-preview-viewport' });
+
+  container.appendChild(toolbar);
+  container.appendChild(viewport);
+
+  const toolbarState = {
+    toolbar,
+    viewport,
+    prevButton,
+    nextButton,
+    flowGroup,
+    flowLabel,
+    flowSelect,
+    flowOptions: { paginated: flowPaginated, scrolled: flowScrolled },
+    zoomGroup,
+    zoomLabel,
+    zoomSelect,
+    zoomOptions: { 'fit-page': zoomFitPage, 'fit-width': zoomFitWidth, '1': zoomActual, '1.5': zoomLarge },
+    view: null
+  };
+
+  prevButton.addEventListener('click', () => {
+    if (!toolbarState.view) {
+      return;
+    }
+    toolbarState.view
+      .prev()
+      .catch((error) => console.warn('Failed to navigate to previous Foliate page', error));
+  });
+
+  nextButton.addEventListener('click', () => {
+    if (!toolbarState.view) {
+      return;
+    }
+    toolbarState.view
+      .next()
+      .catch((error) => console.warn('Failed to navigate to next Foliate page', error));
+  });
+
+  flowSelect.addEventListener('change', (event) => {
+    if (!toolbarState.view || toolbarState.view.isFixedLayout) {
+      return;
+    }
+    const value = event.target.value === 'scrolled' ? 'scrolled' : 'paginated';
+    try {
+      toolbarState.view.renderer?.setAttribute?.('flow', value);
+    } catch (error) {
+      console.warn('Failed to update Foliate layout', error);
+    }
+  });
+
+  zoomSelect.addEventListener('change', (event) => {
+    if (!toolbarState.view || !toolbarState.view.isFixedLayout) {
+      return;
+    }
+    const value = event.target.value;
+    try {
+      toolbarState.view.renderer?.setAttribute?.('zoom', value);
+    } catch (error) {
+      console.warn('Failed to update Foliate zoom level', error);
+    }
+  });
+
+  updateFoliateToolbarLabels(toolbarState, pack);
+  showFoliateLoadingState(toolbarState, pack);
+  foliateToolbarMap.set(container, toolbarState);
+  return toolbarState;
+}
+
 function ensureFoliateReady() {
   const registry = window.customElements;
   if (!registry) {
@@ -3573,6 +3876,25 @@ function disposePreviewAsset(bookId) {
     } catch (error) {
       console.warn('Failed to revoke preview object URL', error);
     }
+  }
+  const cached = foliatePreviewCache.get(bookId);
+  if (cached) {
+    try {
+      cached.view?.close?.();
+    } catch (error) {
+      console.warn('Failed to close cached Foliate preview', error);
+    }
+    const toolbarState = cached.container ? foliateToolbarMap.get(cached.container) : null;
+    if (toolbarState) {
+      toolbarState.view = null;
+      if (toolbarState.prevButton) {
+        toolbarState.prevButton.disabled = true;
+      }
+      if (toolbarState.nextButton) {
+        toolbarState.nextButton.disabled = true;
+      }
+    }
+    foliatePreviewCache.delete(bookId);
   }
 }
 
@@ -3693,28 +4015,23 @@ function attachFoliateViewer(container, asset, pack, book) {
   if (!container || !asset) {
     return;
   }
+  const toolbarState = foliateToolbarMap.get(container);
   const previousSignature = container.dataset.foliateSignature;
   const signature = getFoliateAssetSignature(asset, book);
+  const bookId = book?.id;
   if (!signature) {
-    container.innerHTML = '';
-    container.appendChild(
-      createElement('p', {
-        className: 'preview-error',
-        text: pack.previewPanel.unavailable || 'Preview unavailable.'
-      })
-    );
+    showFoliateErrorState(container, pack);
+    if (bookId) {
+      foliatePreviewCache.delete(bookId);
+    }
     return;
   }
-  if (
-    previousSignature === signature &&
-    container.dataset.foliateReady === 'true'
-  ) {
-    const existingView = container.querySelector('foliate-view');
+  if (previousSignature === signature && container.dataset.foliateReady === 'true') {
+    const cachedView = bookId ? foliatePreviewCache.get(bookId)?.view : null;
+    const existingView = cachedView || container.querySelector('foliate-view');
     if (existingView) {
-      const locale = state?.locale || 'en';
-      if (locale) {
-        existingView.setAttribute('lang', locale);
-      }
+      syncFoliateViewLocale(existingView);
+      syncFoliateToolbarState(toolbarState, existingView);
     }
     return;
   }
@@ -3723,6 +4040,21 @@ function attachFoliateViewer(container, asset, pack, book) {
   }
   container.dataset.foliateSignature = signature;
   container.dataset.foliateReady = 'false';
+  if (toolbarState) {
+    showFoliateLoadingState(toolbarState, pack);
+    syncFoliateToolbarState(toolbarState, null);
+  } else {
+    container.innerHTML = '';
+    container.appendChild(
+      createElement('p', {
+        className: 'preview-loading',
+        text:
+          pack.previewPanel.foliateLoading ||
+          pack.previewPanel.loadingPreview ||
+          'Loading reader…'
+      })
+    );
+  }
   ensureFoliateReady()
     .then(async () => {
       if (!document.body.contains(container)) {
@@ -3742,14 +4074,12 @@ function attachFoliateViewer(container, asset, pack, book) {
       if (!resource) {
         throw new Error('Missing Foliate resource data');
       }
-      container.innerHTML = '';
+      const viewport = toolbarState?.viewport || container;
+      viewport.innerHTML = '';
       const view = document.createElement('foliate-view');
       view.style.width = '100%';
       view.style.height = '100%';
-      const locale = state?.locale || 'en';
-      if (locale) {
-        view.setAttribute('lang', locale);
-      }
+      syncFoliateViewLocale(view);
       view.addEventListener('relocate', (event) => {
         try {
           container.dataset.foliateLocation = JSON.stringify(event.detail || {});
@@ -3757,7 +4087,17 @@ function attachFoliateViewer(container, asset, pack, book) {
           console.warn('Failed to store Foliate location', error);
         }
       });
-      container.appendChild(view);
+      viewport.appendChild(view);
+      if (bookId) {
+        const entry = foliatePreviewCache.get(bookId) || {};
+        foliatePreviewCache.set(bookId, {
+          ...entry,
+          container,
+          signature,
+          view,
+          ready: false
+        });
+      }
       const lastLocation = parseFoliateLocation(container.dataset.foliateLocation);
       await view.open(resource);
       if (lastLocation) {
@@ -3768,22 +4108,27 @@ function attachFoliateViewer(container, asset, pack, book) {
         await view.goTo(0);
       }
       container.dataset.foliateReady = 'true';
+      if (toolbarState) {
+        syncFoliateToolbarState(toolbarState, view);
+      }
+      if (bookId) {
+        const entry = foliatePreviewCache.get(bookId);
+        if (entry) {
+          entry.view = view;
+          entry.signature = signature;
+          entry.ready = true;
+        }
+      }
     })
     .catch((error) => {
       console.warn('Unable to initialize Foliate reader', error);
       if (!document.body.contains(container)) {
         return;
       }
-      container.innerHTML = '';
-      container.appendChild(
-        createElement('p', {
-          className: 'preview-error',
-          text:
-            pack.previewPanel.foliateFailed ||
-            pack.previewPanel.unavailable ||
-            'Foliate reader is unavailable.'
-        })
-      );
+      showFoliateErrorState(container, pack);
+      if (bookId) {
+        foliatePreviewCache.delete(bookId);
+      }
       delete container.dataset.foliateReady;
       delete container.dataset.foliateSignature;
     });
@@ -3806,17 +4151,40 @@ function renderPreviewViewer(pack, book, previewState, providedAsset) {
     viewer.appendChild(createElement('p', { className: 'preview-error', text: message }));
     return viewer;
   }
+  const signature = getFoliateAssetSignature(asset, book);
+  const bookId = book?.id;
+  const cachedEntry = bookId ? foliatePreviewCache.get(bookId) : null;
+  if (
+    cachedEntry &&
+    cachedEntry.container &&
+    cachedEntry.signature === signature
+  ) {
+    const toolbarState = foliateToolbarMap.get(cachedEntry.container);
+    updateFoliateToolbarLabels(toolbarState, pack);
+    if (cachedEntry.view) {
+      syncFoliateViewLocale(cachedEntry.view);
+      syncFoliateToolbarState(toolbarState, cachedEntry.view);
+    } else {
+      showFoliateLoadingState(toolbarState, pack);
+    }
+    viewer.appendChild(cachedEntry.container);
+    return viewer;
+  }
+
   const foliateContainer = createElement('div', { className: 'preview-foliate-viewer' });
-  foliateContainer.appendChild(
-    createElement('p', {
-      className: 'preview-loading',
-      text:
-        pack.previewPanel.foliateLoading ||
-        pack.previewPanel.loadingPreview ||
-        'Loading reader…'
-    })
-  );
+  const toolbarState = initializeFoliateToolbar(foliateContainer, pack);
+  showFoliateLoadingState(toolbarState, pack);
   viewer.appendChild(foliateContainer);
+
+  if (bookId) {
+    foliatePreviewCache.set(bookId, {
+      container: foliateContainer,
+      signature,
+      view: null,
+      ready: false
+    });
+  }
+
   requestAnimationFrame(() => {
     attachFoliateViewer(foliateContainer, asset, pack, book);
   });
