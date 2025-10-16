@@ -396,20 +396,21 @@ body {
 }
 
 .collection-action-button {
+  --collection-action-icon-size: 32px;
   position: relative;
   flex: 0 0 auto;
-  width: 56px;
-  height: 56px;
+  width: calc(var(--collection-action-icon-size) + 2px);
+  height: calc(var(--collection-action-icon-size) + 2px);
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 16px;
+  border-radius: 12px;
   border: 1px solid #bfdbfe;
   background: #eff6ff;
   color: #1d4ed8;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
@@ -425,20 +426,20 @@ body {
 }
 
 .collection-action-button.compact {
-  width: 44px;
-  height: 44px;
+  --collection-action-icon-size: 28px;
   padding: 0;
   border-radius: 10px;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 .collection-action-icon {
-  font-size: 1.4rem;
+  font-size: var(--collection-action-icon-size);
   line-height: 1;
-}
-
-.collection-action-button.compact .collection-action-icon {
-  font-size: 1.1rem;
+  width: var(--collection-action-icon-size);
+  height: var(--collection-action-icon-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .collection-action-label {
@@ -456,7 +457,7 @@ body {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
-  z-index: 5;
+  z-index: 50;
 }
 
 .collection-action-button.compact .collection-action-label {
