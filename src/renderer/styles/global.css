@@ -1144,9 +1144,9 @@ body {
 
 .book-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: 20px;
-  justify-items: center;
+  justify-items: stretch;
 }
 
 .book-card {
@@ -1162,7 +1162,7 @@ body {
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   min-width: min(calc(var(--card-button-min-width) * 3 + 16px), 100%);
-  width: min(100%, max-content);
+  width: 100%;
 }
 
 .book-card:hover {
