@@ -2610,11 +2610,21 @@ function handleCollectionAction(collectionId, actionLabel) {
   const normalized = actionLabel.trim();
   const resumeLabels = [pack.collectionDetail.resumeReading, 'Resume Reading', '继续阅读'];
   const previewLabels = [pack.collectionDetail.cardActions.preview, 'Preview Library', '预览文库'];
+  const exportLabels = [pack.collectionDetail.cardActions.export, 'Export', 'Export Library', '导出', '导出文库'];
   const chatLabels = [pack.collectionDetail.cardActions.chat, 'Open AI Chat', '开启 AI 对话'];
   const editLabels = ['Edit', '编辑'];
   const rescanLabels = [pack.collectionDetail.rescan, '重新扫描'];
   if (resumeLabels.includes(normalized) || previewLabels.includes(normalized)) {
     setSelectedCollection(collectionId);
+    return;
+  }
+  if (exportLabels.includes(normalized)) {
+    setSelectedCollection(collectionId);
+    const books = getBooks(collectionId) || [];
+    const bookIds = books.map((book) => book.id).filter(Boolean);
+    if (bookIds.length) {
+      openExportModal(bookIds, collectionId);
+    }
     return;
   }
   if (chatLabels.includes(normalized)) {
@@ -2661,6 +2671,7 @@ function getCollectionActionDefinitions(pack) {
 
   const resumePrimary = detailPack.resumeReading || (locale === 'zh' ? '继续阅读' : 'Resume Reading');
   const previewPrimary = cardActions.preview || (locale === 'zh' ? '预览文库' : 'Preview Library');
+  const exportPrimary = cardActions.export || (locale === 'zh' ? '批量导出' : 'Export Library');
   const chatPrimary = cardActions.chat || (locale === 'zh' ? '开启 AI 对话' : 'AI Chat');
   const editPrimary = locale === 'zh' ? '编辑' : 'Edit';
   const rescanPrimary = detailPack.rescan || (locale === 'zh' ? '重新扫描' : 'Rescan folders');
@@ -2682,6 +2693,27 @@ function getCollectionActionDefinitions(pack) {
       ])
     },
     {
+      id: 'preview',
+      icon: '👁️',
+      primary: previewPrimary,
+      tooltip: locale === 'zh' ? (cardActions.preview || '预览文库') : (cardActions.preview || 'Preview Library'),
+      labels: dedupe([previewPrimary, cardActions.preview, 'Preview Library', 'Preview', '预览文库'])
+    },
+    {
+      id: 'export',
+      icon: '📤',
+      primary: exportPrimary,
+      tooltip: locale === 'zh' ? (cardActions.export || '导出文库') : (cardActions.export || 'Export library'),
+      labels: dedupe([
+        exportPrimary,
+        cardActions.export,
+        'Export',
+        'Export Library',
+        '导出',
+        '导出文库'
+      ])
+    },
+    {
       id: 'chat',
       icon: '🤖',
       primary: chatPrimary,
@@ -2694,13 +2726,6 @@ function getCollectionActionDefinitions(pack) {
       primary: editPrimary,
       tooltip: locale === 'zh' ? '编辑收藏集' : 'Edit collection',
       labels: dedupe([editPrimary, 'Edit', '编辑'])
-    },
-    {
-      id: 'preview',
-      icon: '👁️',
-      primary: previewPrimary,
-      tooltip: locale === 'zh' ? (cardActions.preview || '预览文库') : (cardActions.preview || 'Preview Library'),
-      labels: dedupe([previewPrimary, cardActions.preview, 'Preview Library', 'Preview', '预览文库'])
     },
     {
       id: 'rescan',
@@ -2757,9 +2782,16 @@ function renderCollections(pack) {
       );
       actionDefinitions.forEach((definition) => {
         const isAvailable = Array.from(availableLabels).some((label) => definition.labels.includes(label));
+        const buttonClasses = [`collection-action-button`, `collection-action-${definition.id}`];
+        if (!isAvailable) {
+          buttonClasses.push('is-disabled');
+        }
         const button = createElement('button', {
-          className: `collection-action-button${isAvailable ? '' : ' is-disabled'}`,
-          text: definition.icon
+          className: buttonClasses.join(' '),
+          children: [
+            createElement('span', { className: 'collection-action-icon', text: definition.icon }),
+            createElement('span', { className: 'collection-action-label', text: definition.primary })
+          ]
         });
         button.type = 'button';
         button.setAttribute('aria-label', definition.tooltip);
@@ -3640,6 +3672,115 @@ function trimPreviewText(text, limit = 40000) {
   return `${normalized.slice(0, limit)}…`;
 }
 
+const MIN_FOLIATE_ZOOM = 0.5;
+const MAX_FOLIATE_ZOOM = 3;
+const FOLIATE_ZOOM_STEP = 0.1;
+
+function parseFoliateZoom(value) {
+  const numeric = Number.parseFloat(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return null;
+  }
+  return numeric;
+}
+
+function clampFoliateZoom(value) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  const clamped = Math.min(MAX_FOLIATE_ZOOM, Math.max(MIN_FOLIATE_ZOOM, value));
+  return Math.round(clamped * 100) / 100;
+}
+
+function ensureFoliateNumericZoom(view) {
+  if (!view?.renderer) {
+    return null;
+  }
+  const current = view.renderer?.getAttribute?.('zoom');
+  const parsed = parseFoliateZoom(current);
+  if (parsed) {
+    return parsed;
+  }
+  try {
+    view.renderer?.setAttribute?.('zoom', '1');
+    return 1;
+  } catch (error) {
+    console.warn('Failed to reset Foliate zoom level', error);
+  }
+  return null;
+}
+
+function getFoliateZoom(toolbarState) {
+  if (!toolbarState?.view || !toolbarState.view.isFixedLayout) {
+    return null;
+  }
+  const rawValue = toolbarState.view.renderer?.getAttribute?.('zoom');
+  const parsed = parseFoliateZoom(rawValue);
+  if (parsed) {
+    return parsed;
+  }
+  return 1;
+}
+
+function updateZoomDisplay(toolbarState, pack) {
+  if (!toolbarState?.zoomValue) {
+    return;
+  }
+  const activePack = pack || getPack();
+  const previewPack = activePack?.previewPanel || {};
+  const locale = state?.locale === 'zh' ? 'zh' : 'en';
+  const currentLabel =
+    toolbarState.zoomCurrentLabel?.textContent ||
+    previewPack.foliateZoomCurrent ||
+    (locale === 'zh' ? '当前比例' : 'Current scale');
+  const fallbackLabel = locale === 'zh' ? '暂无比例信息' : 'Scale unavailable';
+  const fallbackMessage = locale === 'zh'
+    ? `${currentLabel}：${fallbackLabel}`
+    : `${currentLabel}: ${fallbackLabel}`;
+  if (toolbarState.view && toolbarState.view.isFixedLayout) {
+    const zoomValue = getFoliateZoom(toolbarState) || 1;
+    const percentage = Math.round(zoomValue * 100);
+    const text = `${percentage}%`;
+    toolbarState.zoomValue.textContent = text;
+    const descriptive = locale === 'zh' ? `${currentLabel}：${text}` : `${currentLabel}: ${text}`;
+    toolbarState.zoomValue.setAttribute('aria-label', descriptive);
+    toolbarState.zoomValue.title = descriptive;
+  } else {
+    toolbarState.zoomValue.textContent = '—';
+    toolbarState.zoomValue.setAttribute('aria-label', fallbackMessage);
+    toolbarState.zoomValue.title = fallbackMessage;
+  }
+}
+
+function setFoliateZoom(toolbarState, pack, value) {
+  if (!toolbarState?.view || !toolbarState.view.isFixedLayout) {
+    return;
+  }
+  const normalized = clampFoliateZoom(value);
+  if (!normalized) {
+    return;
+  }
+  try {
+    toolbarState.view.renderer?.setAttribute?.('zoom', normalized.toString());
+  } catch (error) {
+    console.warn('Failed to update Foliate zoom level', error);
+  }
+  updateZoomDisplay(toolbarState, pack);
+}
+
+function adjustFoliateZoom(toolbarState, pack, delta) {
+  if (!toolbarState?.view || !toolbarState.view.isFixedLayout) {
+    return;
+  }
+  const current = getFoliateZoom(toolbarState) || 1;
+  const next = clampFoliateZoom(current + delta);
+  if (!next || Math.abs(next - current) < 0.005) {
+    updateZoomDisplay(toolbarState, pack);
+    return;
+  }
+  setFoliateZoom(toolbarState, pack, next);
+}
+
 function syncFoliateViewLocale(view) {
   const locale = state?.locale || 'en';
   if (view && locale) {
@@ -3691,27 +3832,34 @@ function updateFoliateToolbarLabels(toolbarState, pack) {
   if (toolbarState.zoomLabel) {
     toolbarState.zoomLabel.textContent = zoomLabel;
   }
-  if (toolbarState.zoomSelect) {
-    toolbarState.zoomSelect.setAttribute('aria-label', zoomLabel);
+  const locale = state?.locale === 'zh' ? 'zh' : 'en';
+  const zoomOutLabel =
+    previewPack.foliateZoomOut || previewPack.zoomOut || (locale === 'zh' ? '缩小' : 'Zoom out');
+  const zoomInLabel =
+    previewPack.foliateZoomIn || previewPack.zoomIn || (locale === 'zh' ? '放大' : 'Zoom in');
+  const zoomResetLabel =
+    previewPack.foliateZoomReset || (locale === 'zh' ? '恢复100%' : 'Reset 100%');
+  const zoomCurrentLabel =
+    previewPack.foliateZoomCurrent || (locale === 'zh' ? '当前比例' : 'Current scale');
+  if (toolbarState.zoomOutButton) {
+    toolbarState.zoomOutButton.textContent = zoomOutLabel;
+    toolbarState.zoomOutButton.setAttribute('aria-label', zoomOutLabel);
+    toolbarState.zoomOutButton.title = zoomOutLabel;
   }
-  if (toolbarState.zoomOptions) {
-    if (toolbarState.zoomOptions['fit-page']) {
-      toolbarState.zoomOptions['fit-page'].textContent =
-        previewPack.foliateZoomFitPage || previewPack.fitPage || 'Fit page';
-    }
-    if (toolbarState.zoomOptions['fit-width']) {
-      toolbarState.zoomOptions['fit-width'].textContent =
-        previewPack.foliateZoomFitWidth || previewPack.fitWidth || 'Fit width';
-    }
-    if (toolbarState.zoomOptions['1']) {
-      toolbarState.zoomOptions['1'].textContent =
-        previewPack.foliateZoomActual || '100%';
-    }
-    if (toolbarState.zoomOptions['1.5']) {
-      toolbarState.zoomOptions['1.5'].textContent =
-        previewPack.foliateZoomLarge || '150%';
-    }
+  if (toolbarState.zoomInButton) {
+    toolbarState.zoomInButton.textContent = zoomInLabel;
+    toolbarState.zoomInButton.setAttribute('aria-label', zoomInLabel);
+    toolbarState.zoomInButton.title = zoomInLabel;
   }
+  if (toolbarState.zoomResetButton) {
+    toolbarState.zoomResetButton.textContent = zoomResetLabel;
+    toolbarState.zoomResetButton.setAttribute('aria-label', zoomResetLabel);
+    toolbarState.zoomResetButton.title = zoomResetLabel;
+  }
+  if (toolbarState.zoomCurrentLabel) {
+    toolbarState.zoomCurrentLabel.textContent = zoomCurrentLabel;
+  }
+  updateZoomDisplay(toolbarState, pack);
 }
 
 function getPreviewPageState(bookId) {
@@ -3816,6 +3964,19 @@ function showFoliateLoadingState(toolbarState, pack, bookId) {
   if (toolbarState.nextButton) {
     toolbarState.nextButton.disabled = true;
   }
+  if (toolbarState.zoomOutButton) {
+    toolbarState.zoomOutButton.disabled = true;
+  }
+  if (toolbarState.zoomInButton) {
+    toolbarState.zoomInButton.disabled = true;
+  }
+  if (toolbarState.zoomResetButton) {
+    toolbarState.zoomResetButton.disabled = true;
+  }
+  if (toolbarState.zoomGroup) {
+    toolbarState.zoomGroup.hidden = true;
+  }
+  updateZoomDisplay(toolbarState, pack);
   updateToolbarPageIndicator(toolbarState, bookId, pack);
 }
 
@@ -3840,15 +4001,22 @@ function showFoliateErrorState(container, pack, bookId) {
     if (toolbarState.flowSelect) {
       toolbarState.flowSelect.disabled = true;
     }
-    if (toolbarState.zoomSelect) {
-      toolbarState.zoomSelect.disabled = true;
-    }
     if (toolbarState.flowGroup) {
       toolbarState.flowGroup.hidden = false;
     }
     if (toolbarState.zoomGroup) {
       toolbarState.zoomGroup.hidden = true;
     }
+    if (toolbarState.zoomOutButton) {
+      toolbarState.zoomOutButton.disabled = true;
+    }
+    if (toolbarState.zoomInButton) {
+      toolbarState.zoomInButton.disabled = true;
+    }
+    if (toolbarState.zoomResetButton) {
+      toolbarState.zoomResetButton.disabled = true;
+    }
+    updateZoomDisplay(toolbarState, pack);
     updateToolbarPageIndicator(toolbarState, bookId, pack);
   } else {
     container.innerHTML = '';
@@ -3877,12 +4045,19 @@ function syncFoliateToolbarState(toolbarState, view, pack, bookId) {
     if (toolbarState.flowGroup) {
       toolbarState.flowGroup.hidden = false;
     }
-    if (toolbarState.zoomSelect) {
-      toolbarState.zoomSelect.disabled = true;
-    }
     if (toolbarState.zoomGroup) {
       toolbarState.zoomGroup.hidden = true;
     }
+    if (toolbarState.zoomOutButton) {
+      toolbarState.zoomOutButton.disabled = true;
+    }
+    if (toolbarState.zoomInButton) {
+      toolbarState.zoomInButton.disabled = true;
+    }
+    if (toolbarState.zoomResetButton) {
+      toolbarState.zoomResetButton.disabled = true;
+    }
+    updateZoomDisplay(toolbarState, pack);
     updateToolbarPageIndicator(toolbarState, bookId, pack);
     return;
   }
@@ -3901,24 +4076,20 @@ function syncFoliateToolbarState(toolbarState, view, pack, bookId) {
   if (toolbarState.zoomGroup) {
     toolbarState.zoomGroup.hidden = !isFixedLayout;
   }
-  if (toolbarState.zoomSelect) {
-    toolbarState.zoomSelect.disabled = !isFixedLayout;
-    if (isFixedLayout) {
-      let zoomValue = view.renderer?.getAttribute?.('zoom') || 'fit-page';
-      if (!toolbarState.zoomOptions?.[zoomValue]) {
-        const numericZoom = parseFloat(zoomValue);
-        if (!Number.isNaN(numericZoom)) {
-          zoomValue = numericZoom.toString();
-        } else {
-          zoomValue = 'fit-page';
-        }
-      }
-      if (!toolbarState.zoomOptions?.[zoomValue]) {
-        zoomValue = 'fit-page';
-      }
-      toolbarState.zoomSelect.value = zoomValue;
-    }
+  const zoomEnabled = isFixedLayout;
+  if (toolbarState.zoomOutButton) {
+    toolbarState.zoomOutButton.disabled = !zoomEnabled;
   }
+  if (toolbarState.zoomInButton) {
+    toolbarState.zoomInButton.disabled = !zoomEnabled;
+  }
+  if (toolbarState.zoomResetButton) {
+    toolbarState.zoomResetButton.disabled = !zoomEnabled;
+  }
+  if (zoomEnabled) {
+    ensureFoliateNumericZoom(view);
+  }
+  updateZoomDisplay(toolbarState, pack);
   updateToolbarPageIndicator(toolbarState, bookId, pack);
 }
 
@@ -3949,15 +4120,34 @@ function initializeFoliateToolbar(container, pack) {
   flowGroup.append(flowField);
 
   const zoomGroup = createElement('div', { className: 'foliate-toolbar-group foliate-toolbar-zoom' });
-  const zoomField = createElement('label', { className: 'foliate-toolbar-field' });
+  const zoomField = createElement('div', { className: 'foliate-toolbar-field foliate-zoom-field' });
   const zoomLabel = createElement('span', { className: 'foliate-toolbar-label' });
-  const zoomSelect = createElement('select', { className: 'foliate-toolbar-select' });
-  const zoomFitPage = createElement('option', { attributes: { value: 'fit-page' } });
-  const zoomFitWidth = createElement('option', { attributes: { value: 'fit-width' } });
-  const zoomActual = createElement('option', { attributes: { value: '1' } });
-  const zoomLarge = createElement('option', { attributes: { value: '1.5' } });
-  zoomSelect.append(zoomFitPage, zoomFitWidth, zoomActual, zoomLarge);
-  zoomField.append(zoomLabel, zoomSelect);
+  const zoomControls = createElement('div', { className: 'foliate-zoom-controls' });
+  const zoomOutButton = createElement('button', {
+    className: 'foliate-toolbar-button foliate-zoom-button foliate-zoom-out'
+  });
+  zoomOutButton.type = 'button';
+  zoomOutButton.disabled = true;
+  const zoomInButton = createElement('button', {
+    className: 'foliate-toolbar-button foliate-zoom-button foliate-zoom-in'
+  });
+  zoomInButton.type = 'button';
+  zoomInButton.disabled = true;
+  const zoomResetButton = createElement('button', {
+    className: 'foliate-toolbar-button foliate-zoom-button foliate-zoom-reset'
+  });
+  zoomResetButton.type = 'button';
+  zoomResetButton.disabled = true;
+  const zoomCurrent = createElement('div', { className: 'foliate-zoom-current' });
+  const zoomCurrentLabel = createElement('span', { className: 'foliate-zoom-current-label' });
+  const zoomValue = createElement('span', {
+    className: 'foliate-zoom-current-value',
+    text: '—',
+    attributes: { 'aria-live': 'polite' }
+  });
+  zoomCurrent.append(zoomCurrentLabel, zoomValue);
+  zoomControls.append(zoomOutButton, zoomInButton, zoomResetButton, zoomCurrent);
+  zoomField.append(zoomLabel, zoomControls);
   zoomGroup.append(zoomField);
 
   toolbar.append(navGroup, flowGroup, zoomGroup);
@@ -3979,8 +4169,11 @@ function initializeFoliateToolbar(container, pack) {
     flowOptions: { paginated: flowPaginated, scrolled: flowScrolled },
     zoomGroup,
     zoomLabel,
-    zoomSelect,
-    zoomOptions: { 'fit-page': zoomFitPage, 'fit-width': zoomFitWidth, '1': zoomActual, '1.5': zoomLarge },
+    zoomOutButton,
+    zoomInButton,
+    zoomResetButton,
+    zoomCurrentLabel,
+    zoomValue,
     view: null
   };
 
@@ -4014,16 +4207,16 @@ function initializeFoliateToolbar(container, pack) {
     }
   });
 
-  zoomSelect.addEventListener('change', (event) => {
-    if (!toolbarState.view || !toolbarState.view.isFixedLayout) {
-      return;
-    }
-    const value = event.target.value;
-    try {
-      toolbarState.view.renderer?.setAttribute?.('zoom', value);
-    } catch (error) {
-      console.warn('Failed to update Foliate zoom level', error);
-    }
+  zoomOutButton.addEventListener('click', () => {
+    adjustFoliateZoom(toolbarState, pack, -FOLIATE_ZOOM_STEP);
+  });
+
+  zoomInButton.addEventListener('click', () => {
+    adjustFoliateZoom(toolbarState, pack, FOLIATE_ZOOM_STEP);
+  });
+
+  zoomResetButton.addEventListener('click', () => {
+    setFoliateZoom(toolbarState, pack, 1);
   });
 
   updateFoliateToolbarLabels(toolbarState, pack);
