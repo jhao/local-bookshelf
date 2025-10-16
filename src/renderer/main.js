@@ -2758,13 +2758,16 @@ function createCollectionActionButton(definition, options = {}) {
   if (Array.isArray(options.extraClasses)) {
     classNames.push(...options.extraClasses);
   }
+  const labelText = options.label || definition.primary;
   const button = createElement('button', {
     className: classNames.join(' '),
+    attributes: { 'data-label': labelText },
     children: [
       createElement('span', { className: 'collection-action-icon', text: definition.icon }),
       createElement('span', {
         className: 'collection-action-label',
-        text: options.label || definition.primary
+        text: labelText,
+        attributes: { 'aria-hidden': 'true' }
       })
     ]
   });
@@ -2831,9 +2834,14 @@ function renderCollections(pack) {
         }
         const button = createElement('button', {
           className: buttonClasses.join(' '),
+          attributes: { 'data-label': definition.primary },
           children: [
             createElement('span', { className: 'collection-action-icon', text: definition.icon }),
-            createElement('span', { className: 'collection-action-label', text: definition.primary })
+            createElement('span', {
+              className: 'collection-action-label',
+              text: definition.primary,
+              attributes: { 'aria-hidden': 'true' }
+            })
           ]
         });
         button.type = 'button';
