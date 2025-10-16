@@ -1430,6 +1430,8 @@ body.preview-fullscreen-active {
   padding: 14px;
   min-height: 320px;
   height: clamp(320px, 65vh, 760px);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .preview-foliate-viewer {
@@ -1441,6 +1443,7 @@ body.preview-fullscreen-active {
   justify-content: stretch;
   gap: 12px;
   min-height: 320px;
+  width: 100%;
 }
 
   .foliate-preview-toolbar {
@@ -1597,6 +1600,8 @@ body.preview-fullscreen-active {
   background: #f8fafc;
   overflow: auto;
   position: relative;
+  width: 100%;
+  max-width: 100%;
 }
 
 .foliate-preview-viewport .preview-loading,
