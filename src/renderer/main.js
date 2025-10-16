@@ -2737,6 +2737,49 @@ function getCollectionActionDefinitions(pack) {
   ];
 }
 
+function getCollectionActionDefinitionMap(pack) {
+  return getCollectionActionDefinitions(pack).reduce((map, definition) => {
+    map[definition.id] = definition;
+    return map;
+  }, {});
+}
+
+function createCollectionActionButton(definition, options = {}) {
+  if (!definition) {
+    return null;
+  }
+  const classNames = ['collection-action-button', `collection-action-${definition.id}`];
+  if (options.layout === 'text') {
+    classNames.push('text-button');
+  }
+  if (options.compact) {
+    classNames.push('compact');
+  }
+  if (Array.isArray(options.extraClasses)) {
+    classNames.push(...options.extraClasses);
+  }
+  const button = createElement('button', {
+    className: classNames.join(' '),
+    children: [
+      createElement('span', { className: 'collection-action-icon', text: definition.icon }),
+      createElement('span', {
+        className: 'collection-action-label',
+        text: options.label || definition.primary
+      })
+    ]
+  });
+  button.type = 'button';
+  const tooltip = options.tooltip || definition.tooltip || definition.primary;
+  if (tooltip) {
+    button.title = tooltip;
+    button.setAttribute('aria-label', tooltip);
+  }
+  if (typeof options.onClick === 'function') {
+    button.addEventListener('click', options.onClick);
+  }
+  return button;
+}
+
 function renderCollections(pack) {
   const section = createElement('section', { className: 'collection-section' });
   const header = createElement('div', { className: 'section-header' });
@@ -3118,6 +3161,7 @@ function renderCardView(books, preferences, pack) {
     grid.appendChild(createElement('p', { className: 'empty-state', text: pack.collectionDetail.noResults }));
     return grid;
   }
+  const actionDefinitions = getCollectionActionDefinitionMap(pack);
   books.forEach((book) => {
     const card = createElement('article', { className: 'book-card' });
     card.appendChild(renderBookCover(book, 'small'));
@@ -3170,24 +3214,31 @@ function renderCardView(books, preferences, pack) {
       })
     );
     const actionRow = createElement('div', { className: 'collection-actions' });
-    const previewButton = createElement('button', { text: pack.collectionDetail.cardActions.preview });
-    previewButton.type = 'button';
-    previewButton.addEventListener('click', () => setSelectedBook(book.id));
-    const exportButton = createElement('button', { text: pack.collectionDetail.cardActions.export });
-    exportButton.type = 'button';
-    exportButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      openExportModal([book.id], state.selectedCollectionId);
+    const previewButton = createCollectionActionButton(actionDefinitions.preview, {
+      layout: 'text',
+      onClick: (event) => {
+        event.stopPropagation();
+        setSelectedBook(book.id);
+      }
     });
-    const chatButton = createElement('button', { text: pack.collectionDetail.cardActions.chat });
-    chatButton.type = 'button';
-    chatButton.addEventListener('click', () => {
-      ensureAiSession(state.selectedCollectionId);
-      sendAiMessage(state.selectedCollectionId, `${book.title} summary`);
+    const exportButton = createCollectionActionButton(actionDefinitions.export, {
+      layout: 'text',
+      onClick: (event) => {
+        event.stopPropagation();
+        openExportModal([book.id], state.selectedCollectionId);
+      }
     });
-    actionRow.appendChild(previewButton);
-    actionRow.appendChild(exportButton);
-    actionRow.appendChild(chatButton);
+    const chatButton = createCollectionActionButton(actionDefinitions.chat, {
+      layout: 'text',
+      onClick: (event) => {
+        event.stopPropagation();
+        ensureAiSession(state.selectedCollectionId);
+        sendAiMessage(state.selectedCollectionId, `${book.title} summary`);
+      }
+    });
+    [previewButton, exportButton, chatButton]
+      .filter(Boolean)
+      .forEach((button) => actionRow.appendChild(button));
     card.appendChild(actionRow);
     card.addEventListener('click', (event) => {
       if (event.target.tagName.toLowerCase() === 'input' || event.target.tagName.toLowerCase() === 'button') {
@@ -3206,6 +3257,7 @@ function renderTableView(books, preferences, pack) {
     wrapper.appendChild(createElement('p', { className: 'empty-state', text: pack.collectionDetail.noResults }));
     return wrapper;
   }
+  const actionDefinitions = getCollectionActionDefinitionMap(pack);
   const table = createElement('table', { className: 'book-table' });
   const thead = createElement('thead');
   const headerRow = createElement('tr');
@@ -3282,27 +3334,26 @@ function renderTableView(books, preferences, pack) {
     row.appendChild(createElement('td', { text: getEnrichmentLabel(book.enrichment) }));
 
     const actionCell = createElement('td', { className: 'table-actions' });
-    const exportButton = createElement('button', {
-      className: 'ghost-button small',
-      text: pack.collectionDetail.cardActions.export
+    const exportButton = createCollectionActionButton(actionDefinitions.export, {
+      layout: 'text',
+      compact: true,
+      onClick: (event) => {
+        event.stopPropagation();
+        openExportModal([book.id], state.selectedCollectionId);
+      }
     });
-    exportButton.type = 'button';
-    exportButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      openExportModal([book.id], state.selectedCollectionId);
+    const chatButton = createCollectionActionButton(actionDefinitions.chat, {
+      layout: 'text',
+      compact: true,
+      onClick: (event) => {
+        event.stopPropagation();
+        ensureAiSession(state.selectedCollectionId);
+        sendAiMessage(state.selectedCollectionId, `${book.title} summary`);
+      }
     });
-    const chatButton = createElement('button', {
-      className: 'ghost-button small',
-      text: pack.collectionDetail.cardActions.chat
-    });
-    chatButton.type = 'button';
-    chatButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      ensureAiSession(state.selectedCollectionId);
-      sendAiMessage(state.selectedCollectionId, `${book.title} summary`);
-    });
-    actionCell.appendChild(exportButton);
-    actionCell.appendChild(chatButton);
+    [exportButton, chatButton]
+      .filter(Boolean)
+      .forEach((button) => actionCell.appendChild(button));
     row.appendChild(actionCell);
     row.addEventListener('click', (event) => {
       const tag = event.target.tagName.toLowerCase();
