@@ -396,56 +396,85 @@ body {
 }
 
 .collection-action-button {
-  flex: 1 1 140px;
-  display: flex;
+  --collection-action-icon-size: 32px;
+  position: relative;
+  flex: 0 0 auto;
+  width: calc(var(--collection-action-icon-size) + 2px);
+  height: calc(var(--collection-action-icon-size) + 2px);
+  display: inline-flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid #dbeafe;
-  background: #f1f5ff;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
   color: #1d4ed8;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
 .collection-action-button.text-button {
-  flex: 0 0 auto;
+  width: auto;
+  height: auto;
   flex-direction: row;
-  gap: 8px;
   padding: 8px 16px;
   border-radius: 12px;
   font-size: 0.95rem;
 }
 
 .collection-action-button.compact {
-  padding: 6px 12px;
-  gap: 6px;
+  --collection-action-icon-size: 28px;
+  padding: 0;
   border-radius: 10px;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 .collection-action-icon {
-  font-size: 1.4rem;
+  font-size: var(--collection-action-icon-size);
   line-height: 1;
-}
-
-.collection-action-button.compact .collection-action-icon {
-  font-size: 1.1rem;
+  width: var(--collection-action-icon-size);
+  height: var(--collection-action-icon-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .collection-action-label {
-  font-size: 0.85rem;
-  color: inherit;
-  text-align: center;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translate(-50%, -6px);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(29, 78, 216, 0.95);
+  color: #ffffff;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 50;
 }
 
 .collection-action-button.compact .collection-action-label {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
+  top: calc(100% + 6px);
+}
+
+.collection-action-button.text-button .collection-action-label {
+  position: static;
+  transform: none;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-size: 0.95rem;
+  opacity: 1;
+  pointer-events: auto;
+  white-space: normal;
 }
 
 .collection-action-button:hover {
@@ -458,8 +487,10 @@ body {
   color: #ffffff;
 }
 
-.collection-action-button:not(.is-disabled):hover .collection-action-label {
-  color: #ffffff;
+.collection-action-button:not(.text-button):hover .collection-action-label,
+.collection-action-button:not(.text-button):focus-visible .collection-action-label {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .collection-action-button.is-disabled {
@@ -471,7 +502,7 @@ body {
 }
 
 .collection-action-button.is-disabled .collection-action-label {
-  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.95);
 }
 
 .collection-action-button.is-disabled:hover {
@@ -480,37 +511,9 @@ body {
   color: #94a3b8;
 }
 
-.collection-action-button.collection-action-preview {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  color: #1d4ed8;
-}
-
-.collection-action-button.collection-action-preview:not(.is-disabled):hover {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-}
-
-.collection-action-button.collection-action-export {
-  background: #ecfdf5;
-  border-color: #bbf7d0;
-  color: #047857;
-}
-
-.collection-action-button.collection-action-export:not(.is-disabled):hover {
-  background: #047857;
-  border-color: #047857;
-}
-
-.collection-action-button.collection-action-chat {
-  background: #f5f3ff;
-  border-color: #ddd6fe;
-  color: #6d28d9;
-}
-
-.collection-action-button.collection-action-chat:not(.is-disabled):hover {
-  background: #6d28d9;
-  border-color: #6d28d9;
+.collection-action-button.is-disabled .collection-action-icon {
+  filter: grayscale(1);
+  opacity: 0.6;
 }
 
 .new-collection-card {
