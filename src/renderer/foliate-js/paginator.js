@@ -175,23 +175,48 @@ const setSelectionTo = (target, collapse) => {
     }
 }
 
+const isDocumentReady = doc => {
+    if (!doc) return false
+    try {
+        return Boolean(doc.defaultView && doc.body && doc.documentElement)
+    } catch (error) {
+        return false
+    }
+}
+
 const getDirection = doc => {
-    const { defaultView } = doc
-    const { writingMode, direction } = defaultView.getComputedStyle(doc.body)
-    const vertical = writingMode === 'vertical-rl'
-        || writingMode === 'vertical-lr'
-    const rtl = doc.body.dir === 'rtl'
-        || direction === 'rtl'
-        || doc.documentElement.dir === 'rtl'
-    return { vertical, rtl }
+    if (!isDocumentReady(doc)) return { vertical: false, rtl: false }
+    try {
+        const view = doc.defaultView
+        const body = doc.body
+        const { writingMode, direction } = view.getComputedStyle(body)
+        const vertical = writingMode === 'vertical-rl'
+            || writingMode === 'vertical-lr'
+        const rtl = body.dir === 'rtl'
+            || direction === 'rtl'
+            || doc.documentElement.dir === 'rtl'
+        return { vertical, rtl }
+    } catch (error) {
+        console.warn('Unable to determine document direction', error)
+        return { vertical: false, rtl: false }
+    }
 }
 
 const getBackground = doc => {
-    const bodyStyle = doc.defaultView.getComputedStyle(doc.body)
-    return bodyStyle.backgroundColor === 'rgba(0, 0, 0, 0)'
-        && bodyStyle.backgroundImage === 'none'
-        ? doc.defaultView.getComputedStyle(doc.documentElement).background
-        : bodyStyle.background
+    if (!isDocumentReady(doc)) return 'transparent'
+    try {
+        const view = doc.defaultView
+        const body = doc.body
+        const bodyStyle = view.getComputedStyle(body)
+        if (bodyStyle.backgroundColor === 'rgba(0, 0, 0, 0)'
+            && bodyStyle.backgroundImage === 'none') {
+            return view.getComputedStyle(doc.documentElement).background
+        }
+        return bodyStyle.background
+    } catch (error) {
+        console.warn('Unable to determine document background', error)
+        return 'transparent'
+    }
 }
 
 const makeMarginals = (length, part) => Array.from({ length }, () => {
@@ -252,10 +277,36 @@ class View {
     }
     async load(src, afterLoad, beforeRender) {
         if (typeof src !== 'string') throw new Error(`${src} is not string`)
-        return new Promise(resolve => {
-            this.#iframe.addEventListener('load', () => {
-                const doc = this.document
-                afterLoad?.(doc)
+        return new Promise((resolve, reject) => {
+            let settled = false
+            const resolveOnce = () => {
+                if (settled) return
+                settled = true
+                resolve()
+            }
+            const rejectOnce = error => {
+                if (settled) return
+                settled = true
+                reject(error)
+            }
+            const onLoad = () => {
+                let doc
+                try {
+                    doc = this.document
+                } catch (error) {
+                    rejectOnce(new Error('Unable to access foliate content document'))
+                    return
+                }
+                if (!isDocumentReady(doc)) {
+                    rejectOnce(new Error('Foliate content document is not accessible'))
+                    return
+                }
+                try {
+                    afterLoad?.(doc)
+                } catch (error) {
+                    rejectOnce(error)
+                    return
+                }
 
                 // it needs to be visible for Firefox to get computed style
                 this.#iframe.style.display = 'block'
@@ -266,8 +317,19 @@ class View {
                 this.#vertical = vertical
                 this.#rtl = rtl
 
-                this.#contentRange.selectNodeContents(doc.body)
-                const layout = beforeRender?.({ vertical, rtl, background })
+                try {
+                    this.#contentRange.selectNodeContents(doc.body)
+                } catch (error) {
+                    rejectOnce(error)
+                    return
+                }
+                let layout
+                try {
+                    layout = beforeRender?.({ vertical, rtl, background })
+                } catch (error) {
+                    rejectOnce(error)
+                    return
+                }
                 this.#iframe.style.display = 'block'
                 this.render(layout)
                 this.#observer.observe(doc.body)
@@ -275,9 +337,13 @@ class View {
                 // the resize observer above doesn't work in Firefox
                 // (see https://bugzilla.mozilla.org/show_bug.cgi?id=1832939)
                 // until the bug is fixed we can at least account for font load
-                doc.fonts.ready.then(() => this.expand())
+                doc.fonts?.ready?.then(() => this.expand())
 
-                resolve()
+                resolveOnce()
+            }
+            this.#iframe.addEventListener('load', onLoad, { once: true })
+            this.#iframe.addEventListener('error', () => {
+                rejectOnce(new Error(`Failed to load content from ${src}`))
             }, { once: true })
             this.#iframe.src = src
         })
@@ -292,6 +358,7 @@ class View {
     scrolled({ gap, columnWidth }) {
         const vertical = this.#vertical
         const doc = this.document
+        if (!isDocumentReady(doc)) return
         setStylesImportant(doc.documentElement, {
             'box-sizing': 'border-box',
             'padding': vertical ? `${gap}px 0` : `0 ${gap}px`,
@@ -311,6 +378,7 @@ class View {
         this.#size = vertical ? height : width
 
         const doc = this.document
+        if (!isDocumentReady(doc)) return
         setStylesImportant(doc.documentElement, {
             'box-sizing': 'border-box',
             'column-width': `${Math.trunc(columnWidth)}px`,
@@ -342,6 +410,7 @@ class View {
         const { width, height, margin } = this.#layout
         const vertical = this.#vertical
         const doc = this.document
+        if (!isDocumentReady(doc)) return
         for (const el of doc.body.querySelectorAll('img, svg, video')) {
             // preserve max size if they are already set
             const { maxHeight, maxWidth } = doc.defaultView.getComputedStyle(el)
@@ -360,7 +429,9 @@ class View {
         }
     }
     expand() {
-        const { documentElement } = this.document
+        const doc = this.document
+        if (!isDocumentReady(doc)) return
+        const { documentElement } = doc
         if (this.#column) {
             const side = this.#vertical ? 'height' : 'width'
             const otherSide = this.#vertical ? 'width' : 'height'
@@ -1116,7 +1187,9 @@ export class Paginator extends HTMLElement {
         this.#view?.document?.fonts?.ready?.then(() => this.#view.expand())
     }
     focusView() {
-        this.#view.document.defaultView.focus()
+        const doc = this.#view?.document
+        if (!isDocumentReady(doc)) return
+        doc.defaultView.focus()
     }
     destroy() {
         this.#observer.unobserve(this)

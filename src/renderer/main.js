@@ -1021,10 +1021,28 @@ function getBooks(collectionId) {
 }
 
 function getPreviewState(bookId, defaultPage = 1) {
-  if (!state.previewStates[bookId]) {
-    state.previewStates[bookId] = { fullscreen: false };
+  if (!state.previewStates[bookId] || typeof state.previewStates[bookId] !== 'object') {
+    state.previewStates[bookId] = {};
   }
-  return state.previewStates[bookId];
+  const entry = state.previewStates[bookId];
+  if (typeof entry.fullscreen !== 'boolean') {
+    entry.fullscreen = false;
+  }
+  const startingPage = Number.isFinite(defaultPage) && defaultPage > 0 ? Math.round(defaultPage) : 0;
+  if (!entry.page || typeof entry.page !== 'object') {
+    const legacyValue = entry.page;
+    entry.page = {};
+    if (Number.isFinite(legacyValue)) {
+      entry.page.current = Math.max(0, Math.round(legacyValue));
+    }
+  }
+  if (!Number.isFinite(entry.page.current) || entry.page.current < 0) {
+    entry.page.current = startingPage;
+  }
+  if (!Number.isFinite(entry.page.total) || entry.page.total < 0) {
+    entry.page.total = 0;
+  }
+  return entry;
 }
 
 function getBookmarks(bookId) {
@@ -3701,7 +3719,7 @@ function getPreviewPageState(bookId) {
     return null;
   }
   const previewState = getPreviewState(bookId);
-  if (!previewState.page) {
+  if (!previewState.page || typeof previewState.page !== 'object') {
     previewState.page = { current: 0, total: 0 };
   }
   return previewState.page;
