@@ -336,15 +336,19 @@ body {
   color: #475569;
 }
 
+
 .collection-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 20px;
+  align-items: stretch;
+  justify-items: stretch;
+  width: 100%;
 }
 
 @media (max-width: 900px) {
   .collection-grid {
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   }
 }
 
@@ -361,6 +365,7 @@ body {
   padding: 16px;
   display: flex;
   flex-direction: column;
+  height: 100%;
   gap: 10px;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
