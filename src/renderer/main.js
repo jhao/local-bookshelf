@@ -2627,6 +2627,73 @@ function handleCollectionAction(collectionId, actionLabel) {
   }
 }
 
+function getCollectionActionDefinitions(pack) {
+  const detailPack = pack.collectionDetail || {};
+  const cardActions = detailPack.cardActions || {};
+  const locale = state.locale || 'en';
+  const dedupe = (input = []) =>
+    Array.from(
+      new Set(
+        input
+          .filter((label) => typeof label === 'string')
+          .map((label) => label.trim())
+          .filter(Boolean)
+      )
+    );
+
+  const resumePrimary = detailPack.resumeReading || (locale === 'zh' ? '继续阅读' : 'Resume Reading');
+  const previewPrimary = cardActions.preview || (locale === 'zh' ? '预览文库' : 'Preview Library');
+  const chatPrimary = cardActions.chat || (locale === 'zh' ? '开启 AI 对话' : 'AI Chat');
+  const editPrimary = locale === 'zh' ? '编辑' : 'Edit';
+  const rescanPrimary = detailPack.rescan || (locale === 'zh' ? '重新扫描' : 'Rescan folders');
+
+  return [
+    {
+      id: 'resume',
+      icon: '📖',
+      primary: resumePrimary,
+      tooltip: locale === 'zh' ? (detailPack.resumeReading || '继续阅读') : (detailPack.resumeReading || 'Resume Reading'),
+      labels: dedupe([
+        resumePrimary,
+        detailPack.resumeReading,
+        'Resume Reading',
+        'Resume last session',
+        '继续阅读',
+        '继续上次阅读',
+        '继续听书'
+      ])
+    },
+    {
+      id: 'chat',
+      icon: '🤖',
+      primary: chatPrimary,
+      tooltip: locale === 'zh' ? (cardActions.chat || '开启 AI 对话') : (cardActions.chat || 'AI Chat'),
+      labels: dedupe([chatPrimary, cardActions.chat, 'Open AI Chat', 'AI Chat', '开启 AI 对话'])
+    },
+    {
+      id: 'edit',
+      icon: '✏️',
+      primary: editPrimary,
+      tooltip: locale === 'zh' ? '编辑收藏集' : 'Edit collection',
+      labels: dedupe([editPrimary, 'Edit', '编辑'])
+    },
+    {
+      id: 'preview',
+      icon: '👁️',
+      primary: previewPrimary,
+      tooltip: locale === 'zh' ? (cardActions.preview || '预览文库') : (cardActions.preview || 'Preview Library'),
+      labels: dedupe([previewPrimary, cardActions.preview, 'Preview Library', 'Preview', '预览文库'])
+    },
+    {
+      id: 'rescan',
+      icon: '🔄',
+      primary: rescanPrimary,
+      tooltip: locale === 'zh' ? '重新扫描' : 'Rescan folders',
+      labels: dedupe([rescanPrimary, detailPack.rescan, 'Rescan folders', '重新扫描'])
+    }
+  ];
+}
+
 function renderCollections(pack) {
   const section = createElement('section', { className: 'collection-section' });
   const header = createElement('div', { className: 'section-header' });
@@ -2634,6 +2701,7 @@ function renderCollections(pack) {
   header.appendChild(createElement('p', { text: pack.collectionsSubtitle }));
 
   const grid = createElement('div', { className: 'collection-grid' });
+  const actionDefinitions = getCollectionActionDefinitions(pack);
   const collections = getCollectionList();
   collections.forEach((collection) => {
     const isNew = collection.id === 'new-collection';
@@ -2647,19 +2715,48 @@ function renderCollections(pack) {
     card.appendChild(createElement('p', { text: collection.description }));
     card.appendChild(createElement('p', { text: collection.stats }));
     const actionRow = createElement('div', { className: 'collection-actions' });
-    collection.actions.forEach((action) => {
-      const button = createElement('button', { text: action });
-      button.type = 'button';
-      button.addEventListener('click', (event) => {
-        event.stopPropagation();
-        if (isNew) {
+    if (isNew) {
+      (collection.actions || []).forEach((action) => {
+        const button = createElement('button', {
+          className: 'collection-action-button text-button',
+          text: action
+        });
+        button.type = 'button';
+        button.title = action;
+        button.setAttribute('aria-label', action);
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
           openWizard('create');
-          return;
-        }
-        handleCollectionAction(collection.id, action);
+        });
+        actionRow.appendChild(button);
       });
-      actionRow.appendChild(button);
-    });
+    } else {
+      const availableLabels = new Set(
+        (Array.isArray(collection.actions) ? collection.actions : [])
+          .filter((label) => typeof label === 'string')
+          .map((label) => label.trim())
+          .filter(Boolean)
+      );
+      actionDefinitions.forEach((definition) => {
+        const isAvailable = Array.from(availableLabels).some((label) => definition.labels.includes(label));
+        const button = createElement('button', {
+          className: `collection-action-button${isAvailable ? '' : ' is-disabled'}`,
+          text: definition.icon
+        });
+        button.type = 'button';
+        button.setAttribute('aria-label', definition.tooltip);
+        button.title = definition.tooltip;
+        if (isAvailable) {
+          button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            handleCollectionAction(collection.id, definition.primary);
+          });
+        } else {
+          button.setAttribute('aria-disabled', 'true');
+        }
+        actionRow.appendChild(button);
+      });
+    }
     if (!isNew) {
       card.addEventListener('click', () => setSelectedCollection(collection.id));
     }
@@ -3599,7 +3696,90 @@ function updateFoliateToolbarLabels(toolbarState, pack) {
   }
 }
 
-function showFoliateLoadingState(toolbarState, pack) {
+function getPreviewPageState(bookId) {
+  if (!bookId) {
+    return null;
+  }
+  const previewState = getPreviewState(bookId);
+  if (!previewState.page) {
+    previewState.page = { current: 0, total: 0 };
+  }
+  return previewState.page;
+}
+
+function updatePreviewPageState(bookId, detail) {
+  if (!bookId || !detail) {
+    return;
+  }
+  const pageState = getPreviewPageState(bookId);
+  if (!pageState) {
+    return;
+  }
+  let nextCurrent = pageState.current || 0;
+  let nextTotal = pageState.total || 0;
+
+  const location = detail.location;
+  if (location) {
+    const totalValue = Number(location.total);
+    if (Number.isFinite(totalValue) && totalValue > 0) {
+      nextTotal = Math.max(nextTotal, Math.round(totalValue));
+    }
+    const nextValue = Number(location.next);
+    if (Number.isFinite(nextValue) && nextValue > 0) {
+      nextCurrent = Math.round(nextValue);
+    } else {
+      const currentValue = Number(location.current);
+      if (Number.isFinite(currentValue)) {
+        nextCurrent = Math.round(currentValue + 1);
+      }
+    }
+  }
+
+  const pageItemLabel = detail.pageItem?.label;
+  if (typeof pageItemLabel === 'string') {
+    const numericLabel = parseInt(pageItemLabel, 10);
+    if (!Number.isNaN(numericLabel) && numericLabel > 0) {
+      nextCurrent = numericLabel;
+    }
+  }
+
+  if (nextTotal > 0 && nextCurrent > nextTotal) {
+    nextTotal = nextCurrent;
+  }
+  if (nextCurrent > 0) {
+    pageState.current = nextCurrent;
+  }
+  if (nextTotal > 0) {
+    pageState.total = nextTotal;
+  }
+}
+
+function updateToolbarPageIndicator(toolbarState, bookId, pack) {
+  if (!toolbarState || !toolbarState.pageIndicator) {
+    return;
+  }
+  const previewPack = pack?.previewPanel || {};
+  const pageState = bookId ? state.previewStates?.[bookId]?.page : null;
+  const hasInfo = pageState && pageState.current > 0 && pageState.total > 0;
+  if (hasInfo) {
+    const text = `${pageState.current} / ${pageState.total}`;
+    const aria = `${previewPack.currentPage || 'Page'} ${pageState.current} ${previewPack.of || 'of'} ${pageState.total}`;
+    toolbarState.pageIndicator.textContent = text;
+    toolbarState.pageIndicator.setAttribute('aria-label', aria);
+    toolbarState.pageIndicator.title = aria;
+    toolbarState.pageIndicator.classList.remove('muted');
+    return;
+  }
+  const ariaFallback =
+    previewPack.pageUnknown ||
+    (state.locale === 'zh' ? '暂无页码信息' : 'Page information unavailable');
+  toolbarState.pageIndicator.textContent = '– / –';
+  toolbarState.pageIndicator.setAttribute('aria-label', ariaFallback);
+  toolbarState.pageIndicator.title = ariaFallback;
+  toolbarState.pageIndicator.classList.add('muted');
+}
+
+function showFoliateLoadingState(toolbarState, pack, bookId) {
   if (!toolbarState) {
     return;
   }
@@ -3618,9 +3798,10 @@ function showFoliateLoadingState(toolbarState, pack) {
   if (toolbarState.nextButton) {
     toolbarState.nextButton.disabled = true;
   }
+  updateToolbarPageIndicator(toolbarState, bookId, pack);
 }
 
-function showFoliateErrorState(container, pack) {
+function showFoliateErrorState(container, pack, bookId) {
   const toolbarState = foliateToolbarMap.get(container);
   const errorText =
     pack?.previewPanel?.foliateFailed ||
@@ -3650,6 +3831,7 @@ function showFoliateErrorState(container, pack) {
     if (toolbarState.zoomGroup) {
       toolbarState.zoomGroup.hidden = true;
     }
+    updateToolbarPageIndicator(toolbarState, bookId, pack);
   } else {
     container.innerHTML = '';
     container.appendChild(
@@ -3658,7 +3840,7 @@ function showFoliateErrorState(container, pack) {
   }
 }
 
-function syncFoliateToolbarState(toolbarState, view) {
+function syncFoliateToolbarState(toolbarState, view, pack, bookId) {
   if (!toolbarState) {
     return;
   }
@@ -3683,6 +3865,7 @@ function syncFoliateToolbarState(toolbarState, view) {
     if (toolbarState.zoomGroup) {
       toolbarState.zoomGroup.hidden = true;
     }
+    updateToolbarPageIndicator(toolbarState, bookId, pack);
     return;
   }
 
@@ -3718,19 +3901,24 @@ function syncFoliateToolbarState(toolbarState, view) {
       toolbarState.zoomSelect.value = zoomValue;
     }
   }
+  updateToolbarPageIndicator(toolbarState, bookId, pack);
 }
 
 function initializeFoliateToolbar(container, pack) {
   const toolbar = createElement('div', { className: 'foliate-preview-toolbar' });
   toolbar.setAttribute('role', 'toolbar');
   const navGroup = createElement('div', { className: 'foliate-toolbar-group foliate-toolbar-nav' });
+  const pageIndicator = createElement('span', {
+    className: 'foliate-page-indicator muted',
+    text: '– / –'
+  });
   const prevButton = createElement('button', { className: 'foliate-toolbar-button' });
   prevButton.type = 'button';
   prevButton.disabled = true;
   const nextButton = createElement('button', { className: 'foliate-toolbar-button' });
   nextButton.type = 'button';
   nextButton.disabled = true;
-  navGroup.append(prevButton, nextButton);
+  navGroup.append(pageIndicator, prevButton, nextButton);
 
   const flowGroup = createElement('div', { className: 'foliate-toolbar-group foliate-toolbar-layout' });
   const flowField = createElement('label', { className: 'foliate-toolbar-field' });
@@ -3766,6 +3954,7 @@ function initializeFoliateToolbar(container, pack) {
     viewport,
     prevButton,
     nextButton,
+    pageIndicator,
     flowGroup,
     flowLabel,
     flowSelect,
@@ -3820,7 +4009,8 @@ function initializeFoliateToolbar(container, pack) {
   });
 
   updateFoliateToolbarLabels(toolbarState, pack);
-  showFoliateLoadingState(toolbarState, pack);
+  updateToolbarPageIndicator(toolbarState, null, pack);
+  showFoliateLoadingState(toolbarState, pack, null);
   foliateToolbarMap.set(container, toolbarState);
   return toolbarState;
 }
@@ -4010,7 +4200,7 @@ function attachFoliateViewer(container, asset, pack, book) {
   const signature = getFoliateAssetSignature(asset, book);
   const bookId = book?.id;
   if (!signature) {
-    showFoliateErrorState(container, pack);
+    showFoliateErrorState(container, pack, bookId);
     if (bookId) {
       foliatePreviewCache.delete(bookId);
     }
@@ -4021,7 +4211,11 @@ function attachFoliateViewer(container, asset, pack, book) {
     const existingView = cachedView || container.querySelector('foliate-view');
     if (existingView) {
       syncFoliateViewLocale(existingView);
-      syncFoliateToolbarState(toolbarState, existingView);
+      syncFoliateToolbarState(toolbarState, existingView, pack, bookId);
+      updatePreviewPageState(bookId, cachedView?.lastLocation || null);
+      updateToolbarPageIndicator(toolbarState, bookId, pack);
+    } else {
+      showFoliateLoadingState(toolbarState, pack, bookId);
     }
     return;
   }
@@ -4031,8 +4225,8 @@ function attachFoliateViewer(container, asset, pack, book) {
   container.dataset.foliateSignature = signature;
   container.dataset.foliateReady = 'false';
   if (toolbarState) {
-    showFoliateLoadingState(toolbarState, pack);
-    syncFoliateToolbarState(toolbarState, null);
+    showFoliateLoadingState(toolbarState, pack, bookId);
+    syncFoliateToolbarState(toolbarState, null, pack, bookId);
   } else {
     container.innerHTML = '';
     container.appendChild(
@@ -4076,6 +4270,11 @@ function attachFoliateViewer(container, asset, pack, book) {
         } catch (error) {
           console.warn('Failed to store Foliate location', error);
         }
+        if (bookId) {
+          updatePreviewPageState(bookId, event.detail);
+          const updatedToolbar = foliateToolbarMap.get(container);
+          updateToolbarPageIndicator(updatedToolbar, bookId, pack);
+        }
       });
       viewport.appendChild(view);
       if (bookId) {
@@ -4098,8 +4297,14 @@ function attachFoliateViewer(container, asset, pack, book) {
         await view.goTo(0);
       }
       container.dataset.foliateReady = 'true';
+      if (bookId && view.lastLocation) {
+        updatePreviewPageState(bookId, view.lastLocation);
+      }
       if (toolbarState) {
-        syncFoliateToolbarState(toolbarState, view);
+        syncFoliateToolbarState(toolbarState, view, pack, bookId);
+      }
+      if (bookId) {
+        updateToolbarPageIndicator(toolbarState, bookId, pack);
       }
       if (bookId) {
         const entry = foliatePreviewCache.get(bookId);
@@ -4115,7 +4320,7 @@ function attachFoliateViewer(container, asset, pack, book) {
       if (!document.body.contains(container)) {
         return;
       }
-      showFoliateErrorState(container, pack);
+      showFoliateErrorState(container, pack, bookId);
       if (bookId) {
         foliatePreviewCache.delete(bookId);
       }
@@ -4153,17 +4358,43 @@ function renderPreviewViewer(pack, book, previewState, providedAsset) {
     updateFoliateToolbarLabels(toolbarState, pack);
     if (cachedEntry.view) {
       syncFoliateViewLocale(cachedEntry.view);
-      syncFoliateToolbarState(toolbarState, cachedEntry.view);
+      syncFoliateToolbarState(toolbarState, cachedEntry.view, pack, bookId);
+      if (bookId && cachedEntry.view.lastLocation) {
+        updatePreviewPageState(bookId, cachedEntry.view.lastLocation);
+      }
     } else {
-      showFoliateLoadingState(toolbarState, pack);
+      showFoliateLoadingState(toolbarState, pack, bookId);
+      syncFoliateToolbarState(toolbarState, null, pack, bookId);
     }
+    updateToolbarPageIndicator(toolbarState, bookId, pack);
     viewer.appendChild(cachedEntry.container);
+    requestAnimationFrame(() => {
+      const currentToolbar = foliateToolbarMap.get(cachedEntry.container) || toolbarState;
+      updateToolbarPageIndicator(currentToolbar, bookId, pack);
+      const activeView = cachedEntry.view || cachedEntry.container.querySelector('foliate-view');
+      const needsReattach =
+        !activeView ||
+        !activeView.isConnected ||
+        cachedEntry.container.dataset.foliateReady !== 'true';
+      if (needsReattach) {
+        attachFoliateViewer(cachedEntry.container, asset, pack, book);
+        return;
+      }
+      if (typeof activeView.renderer?.resize === 'function') {
+        try {
+          activeView.renderer.resize();
+        } catch (error) {
+          console.warn('Failed to refresh Foliate renderer', error);
+        }
+      }
+      syncFoliateToolbarState(currentToolbar, activeView, pack, bookId);
+    });
     return viewer;
   }
 
   const foliateContainer = createElement('div', { className: 'preview-foliate-viewer' });
   const toolbarState = initializeFoliateToolbar(foliateContainer, pack);
-  showFoliateLoadingState(toolbarState, pack);
+  showFoliateLoadingState(toolbarState, pack, bookId);
   viewer.appendChild(foliateContainer);
 
   if (bookId) {
