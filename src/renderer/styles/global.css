@@ -1430,6 +1430,8 @@ body.preview-fullscreen-active {
   padding: 14px;
   min-height: 320px;
   height: clamp(320px, 65vh, 760px);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .preview-foliate-viewer {
@@ -1441,6 +1443,7 @@ body.preview-fullscreen-active {
   justify-content: stretch;
   gap: 12px;
   min-height: 320px;
+  width: 100%;
 }
 
   .foliate-preview-toolbar {
@@ -1597,6 +1600,8 @@ body.preview-fullscreen-active {
   background: #f8fafc;
   overflow: auto;
   position: relative;
+  width: 100%;
+  max-width: 100%;
 }
 
 .foliate-preview-viewport .preview-loading,
@@ -1717,29 +1722,50 @@ body.preview-fullscreen-active {
   display: flex;
   gap: 24px;
   flex-wrap: wrap;
+  --preview-side-width: 280px;
+  --preview-gap: 24px;
 }
 
 .preview-panel.fullscreen .preview-layout {
   flex-wrap: nowrap;
   align-items: flex-start;
+  --preview-side-width: 360px;
 }
 
 .preview-main {
-  flex: 2 1 520px;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  width: clamp(0px, calc(100% - var(--preview-side-width) - var(--preview-gap)), 100%);
+  max-width: clamp(0px, calc(100% - var(--preview-side-width) - var(--preview-gap)), 100%);
 }
 
 .preview-side {
-  flex: 1 1 280px;
+  flex: 0 0 var(--preview-side-width);
+  width: var(--preview-side-width);
+  max-width: var(--preview-side-width);
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
 .preview-panel.fullscreen .preview-side {
-  max-width: 360px;
+  max-width: var(--preview-side-width);
+}
+
+@media (max-width: 900px) {
+  .preview-main {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .preview-side {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+  }
 }
 
 .preview-summary {
