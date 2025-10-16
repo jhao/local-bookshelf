@@ -422,15 +422,30 @@ body {
   font-size: 0.95rem;
 }
 
+.collection-action-button.compact {
+  padding: 6px 12px;
+  gap: 6px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+
 .collection-action-icon {
   font-size: 1.4rem;
   line-height: 1;
+}
+
+.collection-action-button.compact .collection-action-icon {
+  font-size: 1.1rem;
 }
 
 .collection-action-label {
   font-size: 0.85rem;
   color: inherit;
   text-align: center;
+}
+
+.collection-action-button.compact .collection-action-label {
+  font-size: 0.75rem;
 }
 
 .collection-action-button:hover {
@@ -1300,9 +1315,8 @@ body {
   justify-content: flex-end;
 }
 
-.table-actions .ghost-button.small {
-  font-size: 0.8rem;
-  padding: 6px 10px;
+.table-actions .collection-action-button {
+  flex: 0 0 auto;
 }
 
 .pagination-controls,
