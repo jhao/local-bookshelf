@@ -437,6 +437,7 @@ body {
 .collection-action-button.collection-action-export,
 .collection-action-button.collection-action-chat,
 .collection-action-button.collection-action-edit,
+.collection-action-button.collection-action-delete,
 .collection-action-button.collection-action-rescan {
   --collection-action-icon-size: 16px;
 }
