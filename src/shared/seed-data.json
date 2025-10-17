@@ -235,6 +235,7 @@
         "activeFilters": "Active filters",
         "directories": "Included directories",
         "directoryEmpty": "No directories have been configured yet.",
+        "revealDirectoryError": "Unable to open folder.",
         "editDirectories": "Edit directories",
         "directorySaved": "Directories updated",
         "rescanCompleted": "Scan completed",
@@ -296,7 +297,8 @@
         "confirmDelete": "Delete this collection? This cannot be undone.",
         "deleteSuccess": "Collection deleted",
         "refresh": "Update book details from the internet",
-        "openChat": "Open AI chat"
+        "openChat": "Open AI chat",
+        "progressTooltip": "Reading progress"
       },
       "previewPanel": {
         "title": "Reader Preview",
@@ -649,6 +651,7 @@
         "activeFilters": "已选条件",
         "directories": "覆盖目录",
         "directoryEmpty": "尚未配置目录。",
+        "revealDirectoryError": "无法打开目录。",
         "editDirectories": "编辑目录",
         "directorySaved": "目录已更新",
         "rescanCompleted": "扫描完成",
@@ -710,7 +713,8 @@
         "confirmDelete": "确认删除该收藏集？此操作不可恢复。",
         "deleteSuccess": "收藏集已删除",
         "refresh": "从互联网更新图书细节信息",
-        "openChat": "打开 AI 对话"
+        "openChat": "打开 AI 对话",
+        "progressTooltip": "阅读进度"
       },
       "previewPanel": {
         "title": "阅读器预览",
