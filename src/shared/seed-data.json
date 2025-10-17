@@ -54,7 +54,8 @@
           "actions": [
             "Resume Reading",
             "Open AI Chat",
-            "Edit"
+            "Edit",
+            "Delete"
           ]
         },
         {
@@ -64,7 +65,8 @@
           "stats": "198 books · Metadata 95% complete",
           "actions": [
             "Preview Library",
-            "Edit"
+            "Edit",
+            "Delete"
           ]
         },
         {
@@ -75,7 +77,8 @@
           "actions": [
             "Continue Listening",
             "Open AI Chat",
-            "Edit"
+            "Edit",
+            "Delete"
           ]
         }
       ],
@@ -269,7 +272,8 @@
         "cardActions": {
           "preview": "Preview",
           "export": "Export",
-          "chat": "AI Chat"
+          "chat": "AI Chat",
+          "delete": "Delete"
         },
         "tableHeaders": [
           "Title",
@@ -287,6 +291,10 @@
         "resumeReading": "Resume last session",
         "rescan": "Rescan folders",
         "confirmRescan": "Rescan the configured directories?",
+        "delete": "Delete",
+        "deleteTooltip": "Delete collection",
+        "confirmDelete": "Delete this collection? This cannot be undone.",
+        "deleteSuccess": "Collection deleted",
         "refresh": "Update book details from the internet",
         "openChat": "Open AI chat"
       },
@@ -460,7 +468,8 @@
           "actions": [
             "继续阅读",
             "开启 AI 对话",
-            "编辑"
+            "编辑",
+            "删除"
           ]
         },
         {
@@ -470,7 +479,8 @@
           "stats": "198 本 · 元数据完善率 95%",
           "actions": [
             "预览文库",
-            "编辑"
+            "编辑",
+            "删除"
           ]
         },
         {
@@ -481,7 +491,8 @@
           "actions": [
             "继续听书",
             "开启 AI 对话",
-            "编辑"
+            "编辑",
+            "删除"
           ]
         }
       ],
@@ -675,7 +686,8 @@
         "cardActions": {
           "preview": "预览",
           "export": "导出",
-          "chat": "AI 对话"
+          "chat": "AI 对话",
+          "delete": "删除"
         },
         "tableHeaders": [
           "标题",
@@ -693,6 +705,10 @@
         "resumeReading": "继续上次阅读",
         "rescan": "重新扫描目录",
         "confirmRescan": "确定要重新扫描目录吗？",
+        "delete": "删除",
+        "deleteTooltip": "删除收藏集",
+        "confirmDelete": "确认删除该收藏集？此操作不可恢复。",
+        "deleteSuccess": "收藏集已删除",
         "refresh": "从互联网更新图书细节信息",
         "openChat": "打开 AI 对话"
       },
