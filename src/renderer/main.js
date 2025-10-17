@@ -3271,9 +3271,13 @@ function renderCardView(books, preferences, pack) {
     return grid;
   }
   const actionDefinitions = getCollectionActionDefinitionMap(pack);
+  const collectionDirectories = state.selectedCollectionId
+    ? state.collectionMeta[state.selectedCollectionId]?.directories || []
+    : [];
   books.forEach((book) => {
     const card = createElement('article', { className: 'book-card' });
-    card.appendChild(renderBookCover(book, 'small'));
+    const body = createElement('div', { className: 'book-card-body' });
+    const textColumn = createElement('div', { className: 'book-card-text' });
     const header = createElement('div', { className: 'book-card-header' });
     const checkbox = createElement('input', {
       className: 'styled-checkbox',
@@ -3291,19 +3295,25 @@ function renderCardView(books, preferences, pack) {
     header.appendChild(checkbox);
     const emoji = getClassificationEmoji(book.classification);
     header.appendChild(createElement('h3', { text: `${emoji} ${book.title}` }));
-    card.appendChild(header);
+    textColumn.appendChild(header);
     const authorText = formatAuthorText(book.author);
     const classificationLabel = getClassificationLabel(book.classification || 'unknown');
     const yearText = formatPublicationYearText(book.publicationYear);
-    card.appendChild(
+    textColumn.appendChild(
       createElement('p', {
         className: 'book-meta',
         text: `${authorText} · ${classificationLabel} · ${yearText}`
       })
     );
-    card.appendChild(
-      createElement('p', { className: 'book-summary', text: getBookSummaryText(book) })
-    );
+
+    const subdirectoryText = getBookSubdirectoryText(book, collectionDirectories);
+    if (subdirectoryText) {
+      const label = state.locale === 'zh' ? '子目录：' : 'Subdirectory:';
+      textColumn.appendChild(
+        createElement('p', { className: 'book-directory', text: `${label} ${subdirectoryText}` })
+      );
+    }
+
     const progress = Math.round((book.progress?.currentPage || 1) / book.pages * 100);
     const progressTooltip = pack.collectionDetail.progressTooltip || pack.collectionDetail.progressLabel;
     const progressOptions = {
@@ -3327,7 +3337,15 @@ function renderCardView(books, preferences, pack) {
         'aria-label': progressTooltip
       };
     }
-    card.appendChild(createElement('div', progressOptions));
+    textColumn.appendChild(createElement('div', progressOptions));
+    body.appendChild(textColumn);
+
+    const coverColumn = createElement('div', { className: 'book-card-cover' });
+    coverColumn.appendChild(renderBookCover(book, 'small'));
+    body.appendChild(coverColumn);
+
+    card.appendChild(body);
+
     const actionRow = createElement('div', { className: 'collection-actions' });
     const previewButton = createCollectionActionButton(actionDefinitions.preview, {
       layout: 'text',
@@ -5209,6 +5227,66 @@ function splitDirectorySegments(directoryPath) {
     return ['/', ...parts];
   }
   return parts;
+}
+
+function normalizePathSegment(segment) {
+  return (segment || '').toLowerCase();
+}
+
+function isRootSegment(segment) {
+  if (!segment) {
+    return false;
+  }
+  return segment === '/' || /^[A-Za-z]:$/.test(segment) || segment.startsWith('\\\\');
+}
+
+function getBookSubdirectoryText(book, collectionDirectories = []) {
+  const directoryPath = getDirectoryPath(book?.path);
+  if (!directoryPath) {
+    return '';
+  }
+
+  const directorySegments = splitDirectorySegments(directoryPath);
+  if (!directorySegments.length) {
+    return '';
+  }
+
+  const normalizedDirectory = directorySegments.map((segment) => normalizePathSegment(segment));
+  const candidates = (Array.isArray(collectionDirectories) ? collectionDirectories : [])
+    .filter((dir) => typeof dir === 'string' && dir.trim())
+    .map((dir) => {
+      const segments = splitDirectorySegments(dir);
+      return { segments, normalized: segments.map((segment) => normalizePathSegment(segment)) };
+    })
+    .filter((entry) => entry.segments.length)
+    .sort((a, b) => b.segments.length - a.segments.length);
+
+  for (const candidate of candidates) {
+    if (candidate.normalized.length > normalizedDirectory.length) {
+      continue;
+    }
+    let matches = true;
+    for (let index = 0; index < candidate.normalized.length; index += 1) {
+      if (normalizedDirectory[index] !== candidate.normalized[index]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) {
+      const relativeSegments = directorySegments.slice(candidate.segments.length);
+      if (!relativeSegments.length) {
+        return state.locale === 'zh' ? '根目录' : 'Root directory';
+      }
+      return relativeSegments.join(' / ');
+    }
+  }
+
+  const hasRootSegment = isRootSegment(directorySegments[0]);
+  const fallbackSegments = hasRootSegment && directorySegments.length > 1 ? directorySegments.slice(1) : directorySegments;
+  if (!fallbackSegments.length) {
+    return state.locale === 'zh' ? '根目录' : 'Root directory';
+  }
+  return fallbackSegments.join(' / ');
 }
 
 function renderPreviewFileDetails(pack, book) {
