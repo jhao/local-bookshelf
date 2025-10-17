@@ -3305,23 +3305,29 @@ function renderCardView(books, preferences, pack) {
       createElement('p', { className: 'book-summary', text: getBookSummaryText(book) })
     );
     const progress = Math.round((book.progress?.currentPage || 1) / book.pages * 100);
-    card.appendChild(
-      createElement('div', {
-        className: 'progress-bar',
-        children: [
-          createElement('span', { text: `${progress}%` }),
-          createElement('div', {
-            className: 'progress-track',
-            children: [
-              createElement('div', {
-                className: 'progress-fill',
-                attributes: { style: `width: ${progress}%` }
-              })
-            ]
-          })
-        ]
-      })
-    );
+    const progressTooltip = pack.collectionDetail.progressTooltip || pack.collectionDetail.progressLabel;
+    const progressOptions = {
+      className: 'progress-bar',
+      children: [
+        createElement('span', { text: `${progress}%` }),
+        createElement('div', {
+          className: 'progress-track',
+          children: [
+            createElement('div', {
+              className: 'progress-fill',
+              attributes: { style: `width: ${progress}%` }
+            })
+          ]
+        })
+      ]
+    };
+    if (progressTooltip) {
+      progressOptions.attributes = {
+        title: progressTooltip,
+        'aria-label': progressTooltip
+      };
+    }
+    card.appendChild(createElement('div', progressOptions));
     const actionRow = createElement('div', { className: 'collection-actions' });
     const previewButton = createCollectionActionButton(actionDefinitions.preview, {
       layout: 'text',
@@ -3633,6 +3639,29 @@ function renderCollectionDetail(pack) {
   const heroBook = paginated[0] || books[0] || null;
   const currentYear = new Date().getFullYear();
 
+  const createIconActionButton = (icon, label, handler, variant = 'ghost') => {
+    const classes = ['icon-action-button'];
+    if (variant === 'primary') {
+      classes.push('primary-button');
+    } else {
+      classes.push('ghost-button');
+    }
+    const button = createElement('button', {
+      className: classes.join(' '),
+      attributes: {
+        type: 'button',
+        'aria-label': label,
+        title: label
+      }
+    });
+    button.appendChild(createElement('span', { className: 'icon-glyph', text: icon }));
+    button.appendChild(createElement('span', { className: 'icon-label', text: label }));
+    if (typeof handler === 'function') {
+      button.addEventListener('click', handler);
+    }
+    return button;
+  };
+
   const activeFilters =
     (preferences.classification?.size || 0) +
     (preferences.search.trim() ? 1 : 0) +
@@ -3655,8 +3684,46 @@ function renderCollectionDetail(pack) {
   );
 
   const directoriesContainer = createElement('div', { className: 'directory-container' });
-  directoriesContainer.appendChild(createElement('span', { className: 'directory-title', text: pack.collectionDetail.directories }));
+  const directoryTitle = createElement('span', {
+    className: 'directory-title',
+    text: pack.collectionDetail.directories
+  });
+  directoriesContainer.appendChild(directoryTitle);
   const editorState = state.directoryEditor;
+  const directories = Array.isArray(meta.directories)
+    ? meta.directories
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean)
+    : [];
+  let editButton = null;
+
+  if (directories.length) {
+    const revealDirectory = async () => {
+      if (!window.api?.revealInFileManager) {
+        showToast(pack.collectionDetail.revealDirectoryError || 'Unable to open folder.');
+        return;
+      }
+      try {
+        const result = await window.api.revealInFileManager(directories[0]);
+        if (!result?.success) {
+          throw new Error(result?.error || 'unavailable');
+        }
+      } catch (error) {
+        console.error('Failed to reveal directory location', error);
+        showToast(pack.collectionDetail.revealDirectoryError || 'Unable to open folder.');
+      }
+    };
+    directoryTitle.setAttribute('role', 'button');
+    directoryTitle.setAttribute('tabindex', '0');
+    directoryTitle.classList.add('clickable');
+    directoryTitle.addEventListener('click', revealDirectory);
+    directoryTitle.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        revealDirectory();
+      }
+    });
+  }
   if (editorState && editorState.collectionId === collectionId) {
     const textarea = createElement('textarea', {
       className: 'directory-textarea',
@@ -3696,9 +3763,9 @@ function renderCollectionDetail(pack) {
     directoriesContainer.appendChild(rescanToggle);
     directoriesContainer.appendChild(editorActions);
   } else {
-    if (meta.directories?.length) {
+    if (directories.length) {
       const list = createElement('ul', { className: 'directory-list' });
-      meta.directories.forEach((pathValue) => {
+      directories.forEach((pathValue) => {
         list.appendChild(createElement('li', { text: pathValue }));
       });
       directoriesContainer.appendChild(list);
@@ -3707,17 +3774,17 @@ function renderCollectionDetail(pack) {
         createElement('p', { className: 'directory-empty', text: pack.collectionDetail.directoryEmpty })
       );
     }
-    const editButton = createElement('button', { className: 'ghost-button', text: pack.collectionDetail.editDirectories });
-    editButton.type = 'button';
-    editButton.addEventListener('click', () => openDirectoryEditor(collectionId));
-    directoriesContainer.appendChild(editButton);
+    editButton = createIconActionButton('✏️', pack.collectionDetail.editDirectories, () => {
+      openDirectoryEditor(collectionId);
+    });
   }
   info.appendChild(directoriesContainer);
 
-  const actionRow = createElement('div', { className: 'detail-actions' });
-  const rescan = createElement('button', { className: 'ghost-button', text: pack.collectionDetail.rescan });
-  rescan.type = 'button';
-  rescan.addEventListener('click', () => {
+  const actionRow = createElement('div', { className: 'detail-actions icon-action-row' });
+  if (editButton) {
+    actionRow.appendChild(editButton);
+  }
+  const rescan = createIconActionButton('🔄', pack.collectionDetail.rescan, () => {
     const confirmText =
       pack.collectionDetail.confirmRescan ||
       (state.locale === 'zh' ? '确认要重新扫描目录？' : 'Rescan the configured directories?');
@@ -3729,16 +3796,12 @@ function renderCollectionDetail(pack) {
       collectionId,
       label: `${display?.title || ''} · Rescan`
     });
-    activateScan(job, { collectionName: display?.title || '', paths: meta.directories || [] });
+    activateScan(job, { collectionName: display?.title || '', paths: directories });
   });
-  const refresh = createElement('button', { className: 'primary-button', text: pack.collectionDetail.refresh });
-  refresh.type = 'button';
-  refresh.addEventListener('click', () => {
+  const refresh = createIconActionButton('🌐', pack.collectionDetail.refresh, () => {
     refreshMetadata(collectionId);
-  });
-  const chat = createElement('button', { className: 'ghost-button', text: pack.collectionDetail.openChat });
-  chat.type = 'button';
-  chat.addEventListener('click', () => {
+  }, 'primary');
+  const chat = createIconActionButton('🤖', pack.collectionDetail.openChat, () => {
     ensureAiSession(collectionId);
     state.floatingAssistantOpen = true;
     renderApp();
