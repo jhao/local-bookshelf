@@ -930,6 +930,10 @@ function setActivePage(page) {
 
 function getCollectionDisplay(id) {
   const pack = getPack();
+  const overrides = state.collectionOverrides[id];
+  if (overrides?.deleted) {
+    return null;
+  }
   if (id === 'new-collection') {
     return {
       id,
@@ -943,18 +947,26 @@ function getCollectionDisplay(id) {
       actions: [pack.newCollectionLabel]
     };
   }
-  const overrides = state.collectionOverrides[id];
   const basePack = Array.isArray(pack.collections)
     ? pack.collections.find((item) => item.id === id)
     : null;
   const user = state.userCollections.find((item) => item.id === id);
   if (user) {
+    let actionSource =
+      (state.locale === 'zh' ? user.actions?.zh : user.actions?.en) || user.actions?.en || [];
+    if (Array.isArray(user.actions)) {
+      actionSource = user.actions;
+    }
+    const requiredActions = state.locale === 'zh' ? ['编辑', '删除'] : ['Edit', 'Delete'];
+    const actions = Array.from(
+      new Set([...(Array.isArray(actionSource) ? actionSource : []), ...requiredActions].filter(Boolean))
+    );
     return {
       id,
       title: user.names[state.locale] || user.names.en,
       description: user.descriptions[state.locale] || user.descriptions.en,
       stats: user.stats[state.locale] || user.stats.en,
-      actions: user.actions[state.locale] || user.actions.en
+      actions
     };
   }
   if (!basePack) {
@@ -974,7 +986,8 @@ function getCollectionList() {
   const baseCards = baseOrder.map((id) => getCollectionDisplay(id)).filter(Boolean);
   const userCards = state.userCollections
     .filter((item) => !baseOrder.includes(item.id))
-    .map((item) => getCollectionDisplay(item.id));
+    .map((item) => getCollectionDisplay(item.id))
+    .filter(Boolean);
   return [...baseCards, ...userCards];
 }
 
@@ -2348,8 +2361,8 @@ function completeWizard() {
         zh: '0 本 · 等待扫描'
       },
       actions: {
-        en: ['Resume Reading', 'Open AI Chat', 'Rescan'],
-        zh: ['继续阅读', '开启 AI 对话', '重新扫描']
+        en: ['Resume Reading', 'Open AI Chat', 'Rescan', 'Edit', 'Delete'],
+        zh: ['继续阅读', '开启 AI 对话', '重新扫描', '编辑', '删除']
       }
     };
     state.userCollections.push(newCollection);
@@ -2616,6 +2629,15 @@ function handleCollectionAction(collectionId, actionLabel) {
   const chatLabels = [pack.collectionDetail.cardActions.chat, 'Open AI Chat', '开启 AI 对话'];
   const editLabels = ['Edit', '编辑'];
   const rescanLabels = [pack.collectionDetail.rescan, '重新扫描'];
+  const detailPack = pack.collectionDetail || {};
+  const cardActions = detailPack.cardActions || {};
+  const deleteLabels = [
+    detailPack.delete,
+    detailPack.deleteTooltip,
+    cardActions.delete,
+    'Delete',
+    '删除'
+  ].filter(Boolean);
   if (resumeLabels.includes(normalized) || previewLabels.includes(normalized)) {
     setSelectedCollection(collectionId);
     return;
@@ -2654,6 +2676,67 @@ function handleCollectionAction(collectionId, actionLabel) {
       paths
     });
     activateScan(job, { collectionName: display?.title || collectionId, paths });
+    return;
+  }
+  if (deleteLabels.includes(normalized)) {
+    const isUserCollection = state.userCollections.some((item) => item.id === collectionId);
+    const display = getCollectionDisplay(collectionId);
+    const name = display?.title || collectionId;
+    const confirmText =
+      detailPack.confirmDelete ||
+      (state.locale === 'zh' ? '确认删除该收藏集？此操作不可恢复。' : 'Delete this collection? This cannot be undone.');
+    const message = name ? `${confirmText}\n\n${name}` : confirmText;
+    if (!window.confirm(message)) {
+      return;
+    }
+    const books = state.collectionBooks[collectionId] || [];
+    const bookIds = books.map((book) => book.id).filter(Boolean);
+    if (isUserCollection) {
+      state.userCollections = state.userCollections.filter((item) => item.id !== collectionId);
+      delete state.collectionOverrides[collectionId];
+    } else {
+      const overrides = state.collectionOverrides[collectionId] || {};
+      state.collectionOverrides[collectionId] = { ...overrides, deleted: true };
+    }
+    delete state.collectionBooks[collectionId];
+    delete state.collectionMeta[collectionId];
+    delete state.preferences[collectionId];
+    delete state.aiSessions[collectionId];
+    bookIds.forEach((bookId) => {
+      delete state.previewStates[bookId];
+      delete state.bookmarks[bookId];
+      delete state.previewAssets[bookId];
+      foliatePreviewCache.delete(bookId);
+    });
+    state.jobs = state.jobs.filter((job) => job.collectionId !== collectionId);
+    if (state.activeScan?.collectionId === collectionId) {
+      state.activeScan = null;
+    }
+    if (state.activeMetadata?.collectionId === collectionId) {
+      state.activeMetadata = null;
+    }
+    if (state.directoryEditor?.collectionId === collectionId) {
+      state.directoryEditor = null;
+    }
+    if (state.metadataEditor?.collectionId === collectionId) {
+      state.metadataEditor = null;
+    }
+    if (state.exportModal?.collectionId === collectionId) {
+      state.exportModal = null;
+      state.exportState.status = 'idle';
+      state.exportState.progress = 0;
+    }
+    if (state.selectedCollectionId === collectionId) {
+      state.selectedCollectionId = null;
+      state.selectedBookId = null;
+      state.activePage = 'dashboard';
+    }
+    const successMessage =
+      detailPack.deleteSuccess ||
+      (state.locale === 'zh' ? '收藏集已删除' : 'Collection deleted');
+    showToast(successMessage);
+    schedulePersist(true);
+    renderApp();
   }
 }
 
@@ -2677,6 +2760,8 @@ function getCollectionActionDefinitions(pack) {
   const chatPrimary = cardActions.chat || (locale === 'zh' ? '开启 AI 对话' : 'AI Chat');
   const editPrimary = locale === 'zh' ? '编辑' : 'Edit';
   const rescanPrimary = detailPack.rescan || (locale === 'zh' ? '重新扫描' : 'Rescan folders');
+  const deletePrimary = detailPack.delete || (locale === 'zh' ? '删除' : 'Delete');
+  const deleteTooltip = detailPack.deleteTooltip || (locale === 'zh' ? '删除收藏集' : 'Delete collection');
 
   return [
     {
@@ -2728,6 +2813,20 @@ function getCollectionActionDefinitions(pack) {
       primary: editPrimary,
       tooltip: locale === 'zh' ? '编辑收藏集' : 'Edit collection',
       labels: dedupe([editPrimary, 'Edit', '编辑'])
+    },
+    {
+      id: 'delete',
+      icon: '🗑️',
+      primary: deletePrimary,
+      tooltip: deleteTooltip,
+      labels: dedupe([
+        deletePrimary,
+        deleteTooltip,
+        cardActions.delete,
+        detailPack.delete,
+        'Delete',
+        '删除'
+      ])
     },
     {
       id: 'rescan',

@@ -432,6 +432,16 @@ body {
   font-size: 0.8rem;
 }
 
+.collection-action-button.collection-action-resume,
+.collection-action-button.collection-action-preview,
+.collection-action-button.collection-action-export,
+.collection-action-button.collection-action-chat,
+.collection-action-button.collection-action-edit,
+.collection-action-button.collection-action-delete,
+.collection-action-button.collection-action-rescan {
+  --collection-action-icon-size: 16px;
+}
+
 .collection-action-icon {
   font-size: var(--collection-action-icon-size);
   line-height: 1;
