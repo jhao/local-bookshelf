@@ -329,9 +329,21 @@ ipcMain.handle('fs:read-directory', async (_event, options = {}) => {
   }
 });
 
-function parseFindOutput(output = '', rootPath) {
+function shouldIncludeFile(filePath, extensionSet) {
+  if (!extensionSet || !extensionSet.size) {
+    return true;
+  }
+  const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
+  if (!ext) {
+    return false;
+  }
+  return extensionSet.has(ext);
+}
+
+function parseFindOutput(output = '', rootPath, extensionSet) {
   const lines = output.split(/\r?\n/);
   const files = [];
+  const filtered = [];
   lines.forEach((line) => {
     const trimmed = line.trim();
     if (!trimmed || trimmed === '.' || trimmed === './') {
@@ -343,13 +355,17 @@ function parseFindOutput(output = '', rootPath) {
     }
     const fullPath = path.resolve(rootPath, relative);
     files.push(fullPath);
+    if (shouldIncludeFile(fullPath, extensionSet)) {
+      filtered.push(fullPath);
+    }
   });
-  return files;
+  return { allPaths: files, filteredPaths: filtered };
 }
 
-function parseTreeOutput(output = '', rootPath) {
+function parseTreeOutput(output = '', rootPath, extensionSet) {
   const lines = output.split(/\r?\n/);
   const files = [];
+  const filtered = [];
   const stack = [rootPath];
   const summaryPattern = /^\s*\d+\s+(File|Dir)\(s\)/i;
   lines.forEach((line) => {
@@ -393,56 +409,70 @@ function parseTreeOutput(output = '', rootPath) {
     const parent = stack[depth] || stack[stack.length - 1] || rootPath;
     const fullPath = path.join(parent, content);
     files.push(fullPath);
+    if (shouldIncludeFile(fullPath, extensionSet)) {
+      filtered.push(fullPath);
+    }
   });
-  return files;
+  return { allPaths: files, filteredPaths: filtered };
 }
 
-async function walkDirectory(directoryPath, collector = []) {
+async function walkDirectory(directoryPath, extensionSet, collector = { allPaths: [], filteredPaths: [] }) {
   const entries = await fsPromises.readdir(directoryPath, { withFileTypes: true });
   for (const entry of entries) {
     const fullPath = path.join(directoryPath, entry.name);
     if (entry.isDirectory()) {
       try {
-        await walkDirectory(fullPath, collector);
+        await walkDirectory(fullPath, extensionSet, collector);
       } catch (error) {
         console.warn('Failed to traverse directory', fullPath, error);
       }
       continue;
     }
     if (entry.isFile()) {
-      collector.push(fullPath);
+      collector.allPaths.push(fullPath);
+      if (shouldIncludeFile(fullPath, extensionSet)) {
+        collector.filteredPaths.push(fullPath);
+      }
     }
   }
   return collector;
 }
 
-async function enumerateDirectory(directoryPath) {
+async function enumerateDirectory(directoryPath, options = {}) {
   const isWindows = process.platform === 'win32';
   const isDarwin = process.platform === 'darwin';
+  const extensionSet = options.extensionSet;
   try {
     if (isWindows) {
       const command = `tree "${directoryPath}" /F /A`;
       const { stdout } = await execAsync(command, { maxBuffer: 20 * 1024 * 1024 });
-      const parsed = parseTreeOutput(stdout, directoryPath);
-      if (parsed.length) {
+      const parsed = parseTreeOutput(stdout, directoryPath, extensionSet);
+      if (parsed.allPaths.length) {
         return parsed;
       }
     } else {
       const command = 'find . -type f -print';
       const { stdout } = await execAsync(command, { cwd: directoryPath, maxBuffer: 20 * 1024 * 1024 });
-      const parsed = parseFindOutput(stdout, directoryPath);
-      if (parsed.length || !isDarwin) {
+      const parsed = parseFindOutput(stdout, directoryPath, extensionSet);
+      if (parsed.allPaths.length || !isDarwin) {
         return parsed;
       }
     }
   } catch (error) {
     console.warn('Directory enumeration command failed', error);
   }
-  return walkDirectory(directoryPath);
+  return walkDirectory(directoryPath, extensionSet);
 }
 
 ipcMain.handle('fs:enumerate-files', async (_event, options = {}) => {
   const directoryPath = options.path;
+  const requestedExtensions = Array.isArray(options.extensions) ? options.extensions : [];
+  const extensionSet = new Set(
+    requestedExtensions
+      .filter((value) => typeof value === 'string')
+      .map((value) => value.replace(/^\./, '').trim().toLowerCase())
+      .filter(Boolean)
+  );
   if (!directoryPath || typeof directoryPath !== 'string') {
     return { path: directoryPath || null, exists: false, files: [], totalFiles: 0, error: 'Invalid path' };
   }
@@ -456,10 +486,14 @@ ipcMain.handle('fs:enumerate-files', async (_event, options = {}) => {
   }
 
   try {
-    const paths = await enumerateDirectory(directoryPath);
-    const uniquePaths = Array.from(new Set(paths));
+    const { allPaths = [], filteredPaths = [] } = await enumerateDirectory(directoryPath, {
+      extensionSet: extensionSet.size ? extensionSet : null
+    });
+    const uniqueAllPaths = Array.from(new Set(allPaths));
+    const candidatePaths = extensionSet.size ? filteredPaths : allPaths;
+    const uniqueCandidatePaths = Array.from(new Set(candidatePaths));
     const files = [];
-    for (const filePath of uniquePaths) {
+    for (const filePath of uniqueCandidatePaths) {
       try {
         const stats = await fsPromises.stat(filePath);
         if (!stats.isFile()) {
@@ -476,7 +510,13 @@ ipcMain.handle('fs:enumerate-files', async (_event, options = {}) => {
         console.warn('Failed to inspect file', filePath, error);
       }
     }
-    return { path: directoryPath, exists: true, files, totalFiles: uniquePaths.length };
+    return {
+      path: directoryPath,
+      exists: true,
+      files,
+      totalFiles: uniqueAllPaths.length,
+      matchedFiles: uniqueCandidatePaths.length
+    };
   } catch (error) {
     console.error('Failed to enumerate directory', error);
     return { path: directoryPath, exists: false, files: [], totalFiles: 0, error: error.message };

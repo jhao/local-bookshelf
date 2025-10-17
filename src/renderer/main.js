@@ -2016,7 +2016,9 @@ async function runScanJob(job) {
     log(`统计目录文件：${targetPath}`, `Counting files in ${targetPath}`);
     let enumeration = null;
     try {
-      enumeration = await window.api.enumerateFiles(targetPath);
+      enumeration = await window.api.enumerateFiles(targetPath, {
+        extensions: Array.from(supportedBookExtensions)
+      });
     } catch (error) {
       console.error('Failed to enumerate directory', targetPath, error);
       log(`无法统计目录：${targetPath}`, `Unable to inspect ${targetPath}`);
