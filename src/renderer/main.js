@@ -4025,12 +4025,10 @@ function updateFoliateToolbarLabels(toolbarState, pack) {
     previewPack.nextPage ||
     'Next page';
   if (toolbarState.prevButton) {
-    toolbarState.prevButton.textContent = prevLabel;
     toolbarState.prevButton.setAttribute('aria-label', prevLabel);
     toolbarState.prevButton.setAttribute('title', prevLabel);
   }
   if (toolbarState.nextButton) {
-    toolbarState.nextButton.textContent = nextLabel;
     toolbarState.nextButton.setAttribute('aria-label', nextLabel);
     toolbarState.nextButton.setAttribute('title', nextLabel);
   }
@@ -4065,19 +4063,29 @@ function updateFoliateToolbarLabels(toolbarState, pack) {
   const zoomCurrentLabel =
     previewPack.foliateZoomCurrent || (locale === 'zh' ? '当前比例' : 'Current scale');
   if (toolbarState.zoomOutButton) {
-    toolbarState.zoomOutButton.textContent = zoomOutLabel;
     toolbarState.zoomOutButton.setAttribute('aria-label', zoomOutLabel);
     toolbarState.zoomOutButton.title = zoomOutLabel;
   }
   if (toolbarState.zoomInButton) {
-    toolbarState.zoomInButton.textContent = zoomInLabel;
     toolbarState.zoomInButton.setAttribute('aria-label', zoomInLabel);
     toolbarState.zoomInButton.title = zoomInLabel;
   }
   if (toolbarState.zoomResetButton) {
-    toolbarState.zoomResetButton.textContent = zoomResetLabel;
     toolbarState.zoomResetButton.setAttribute('aria-label', zoomResetLabel);
     toolbarState.zoomResetButton.title = zoomResetLabel;
+  }
+  const pageInputLabel =
+    previewPack.foliatePageInputLabel || (state.locale === 'zh' ? '页码' : 'Page number');
+  const goToLabel =
+    previewPack.foliateGoToPage || (state.locale === 'zh' ? '跳转页码' : 'Go to page');
+  if (toolbarState.pageInput) {
+    toolbarState.pageInput.setAttribute('aria-label', pageInputLabel);
+    toolbarState.pageInput.title = pageInputLabel;
+    toolbarState.pageInput.placeholder = pageInputLabel;
+  }
+  if (toolbarState.pageGoButton) {
+    toolbarState.pageGoButton.setAttribute('aria-label', goToLabel);
+    toolbarState.pageGoButton.title = goToLabel;
   }
   if (toolbarState.zoomCurrentLabel) {
     toolbarState.zoomCurrentLabel.textContent = zoomCurrentLabel;
@@ -4157,6 +4165,15 @@ function updateToolbarPageIndicator(toolbarState, bookId, pack) {
     toolbarState.pageIndicator.setAttribute('aria-label', aria);
     toolbarState.pageIndicator.title = aria;
     toolbarState.pageIndicator.classList.remove('muted');
+    if (
+      toolbarState.pageInput &&
+      document.activeElement !== toolbarState.pageInput
+    ) {
+      toolbarState.pageInput.value = `${pageState.current}`;
+    }
+    if (toolbarState.pageInput) {
+      toolbarState.pageInput.setAttribute('max', `${pageState.total}`);
+    }
     return;
   }
   const ariaFallback =
@@ -4166,6 +4183,15 @@ function updateToolbarPageIndicator(toolbarState, bookId, pack) {
   toolbarState.pageIndicator.setAttribute('aria-label', ariaFallback);
   toolbarState.pageIndicator.title = ariaFallback;
   toolbarState.pageIndicator.classList.add('muted');
+  if (
+    toolbarState.pageInput &&
+    document.activeElement !== toolbarState.pageInput
+  ) {
+    toolbarState.pageInput.value = '';
+  }
+  if (toolbarState.pageInput) {
+    toolbarState.pageInput.removeAttribute('max');
+  }
 }
 
 function showFoliateLoadingState(toolbarState, pack, bookId) {
@@ -4186,6 +4212,15 @@ function showFoliateLoadingState(toolbarState, pack, bookId) {
   }
   if (toolbarState.nextButton) {
     toolbarState.nextButton.disabled = true;
+  }
+  if (toolbarState.pageInput) {
+    toolbarState.pageInput.disabled = true;
+    if (document.activeElement !== toolbarState.pageInput) {
+      toolbarState.pageInput.value = '';
+    }
+  }
+  if (toolbarState.pageGoButton) {
+    toolbarState.pageGoButton.disabled = true;
   }
   if (toolbarState.zoomOutButton) {
     toolbarState.zoomOutButton.disabled = true;
@@ -4221,6 +4256,15 @@ function showFoliateErrorState(container, pack, bookId) {
     if (toolbarState.nextButton) {
       toolbarState.nextButton.disabled = true;
     }
+    if (toolbarState.pageInput) {
+      toolbarState.pageInput.disabled = true;
+      if (document.activeElement !== toolbarState.pageInput) {
+        toolbarState.pageInput.value = '';
+      }
+    }
+    if (toolbarState.pageGoButton) {
+      toolbarState.pageGoButton.disabled = true;
+    }
     if (toolbarState.flowSelect) {
       toolbarState.flowSelect.disabled = true;
     }
@@ -4254,12 +4298,22 @@ function syncFoliateToolbarState(toolbarState, view, pack, bookId) {
     return;
   }
   toolbarState.view = view || null;
+  toolbarState.bookId = bookId || null;
   const hasView = Boolean(view);
   if (toolbarState.prevButton) {
     toolbarState.prevButton.disabled = !hasView;
   }
   if (toolbarState.nextButton) {
     toolbarState.nextButton.disabled = !hasView;
+  }
+  if (toolbarState.pageInput) {
+    toolbarState.pageInput.disabled = !hasView;
+    if (!hasView && document.activeElement !== toolbarState.pageInput) {
+      toolbarState.pageInput.value = '';
+    }
+  }
+  if (toolbarState.pageGoButton) {
+    toolbarState.pageGoButton.disabled = !hasView;
   }
   if (!hasView) {
     if (toolbarState.flowSelect) {
@@ -4324,13 +4378,50 @@ function initializeFoliateToolbar(container, pack) {
     className: 'foliate-page-indicator muted',
     text: '– / –'
   });
-  const prevButton = createElement('button', { className: 'foliate-toolbar-button' });
+  const prevButton = createElement('button', {
+    className: 'foliate-toolbar-button icon-only foliate-prev-button'
+  });
   prevButton.type = 'button';
   prevButton.disabled = true;
-  const nextButton = createElement('button', { className: 'foliate-toolbar-button' });
+  prevButton.appendChild(
+    createElement('span', {
+      className: 'foliate-toolbar-icon',
+      text: '◀',
+      attributes: { 'aria-hidden': 'true' }
+    })
+  );
+  const nextButton = createElement('button', {
+    className: 'foliate-toolbar-button icon-only foliate-next-button'
+  });
   nextButton.type = 'button';
   nextButton.disabled = true;
-  navGroup.append(pageIndicator, prevButton, nextButton);
+  nextButton.appendChild(
+    createElement('span', {
+      className: 'foliate-toolbar-icon',
+      text: '▶',
+      attributes: { 'aria-hidden': 'true' }
+    })
+  );
+  const pageJump = createElement('div', { className: 'foliate-toolbar-page-jump' });
+  const pageInput = createElement('input', {
+    className: 'foliate-page-input',
+    attributes: { type: 'number', min: '1', inputmode: 'numeric', pattern: '[0-9]*' }
+  });
+  pageInput.disabled = true;
+  const pageGoButton = createElement('button', {
+    className: 'foliate-toolbar-button icon-only foliate-page-go'
+  });
+  pageGoButton.type = 'button';
+  pageGoButton.disabled = true;
+  pageGoButton.appendChild(
+    createElement('span', {
+      className: 'foliate-toolbar-icon',
+      text: '⮕',
+      attributes: { 'aria-hidden': 'true' }
+    })
+  );
+  pageJump.append(pageInput, pageGoButton);
+  navGroup.append(pageIndicator, prevButton, nextButton, pageJump);
 
   const flowGroup = createElement('div', { className: 'foliate-toolbar-group foliate-toolbar-layout' });
   const flowField = createElement('label', { className: 'foliate-toolbar-field' });
@@ -4347,20 +4438,41 @@ function initializeFoliateToolbar(container, pack) {
   const zoomLabel = createElement('span', { className: 'foliate-toolbar-label' });
   const zoomControls = createElement('div', { className: 'foliate-zoom-controls' });
   const zoomOutButton = createElement('button', {
-    className: 'foliate-toolbar-button foliate-zoom-button foliate-zoom-out'
+    className: 'foliate-toolbar-button icon-only foliate-zoom-button foliate-zoom-out'
   });
   zoomOutButton.type = 'button';
   zoomOutButton.disabled = true;
+  zoomOutButton.appendChild(
+    createElement('span', {
+      className: 'foliate-toolbar-icon',
+      text: '−',
+      attributes: { 'aria-hidden': 'true' }
+    })
+  );
   const zoomInButton = createElement('button', {
-    className: 'foliate-toolbar-button foliate-zoom-button foliate-zoom-in'
+    className: 'foliate-toolbar-button icon-only foliate-zoom-button foliate-zoom-in'
   });
   zoomInButton.type = 'button';
   zoomInButton.disabled = true;
+  zoomInButton.appendChild(
+    createElement('span', {
+      className: 'foliate-toolbar-icon',
+      text: '+',
+      attributes: { 'aria-hidden': 'true' }
+    })
+  );
   const zoomResetButton = createElement('button', {
-    className: 'foliate-toolbar-button foliate-zoom-button foliate-zoom-reset'
+    className: 'foliate-toolbar-button icon-only foliate-zoom-button foliate-zoom-reset'
   });
   zoomResetButton.type = 'button';
   zoomResetButton.disabled = true;
+  zoomResetButton.appendChild(
+    createElement('span', {
+      className: 'foliate-toolbar-icon',
+      text: '⟳',
+      attributes: { 'aria-hidden': 'true' }
+    })
+  );
   const zoomCurrent = createElement('div', { className: 'foliate-zoom-current' });
   const zoomCurrentLabel = createElement('span', { className: 'foliate-zoom-current-label' });
   const zoomValue = createElement('span', {
@@ -4386,6 +4498,8 @@ function initializeFoliateToolbar(container, pack) {
     prevButton,
     nextButton,
     pageIndicator,
+    pageInput,
+    pageGoButton,
     flowGroup,
     flowLabel,
     flowSelect,
@@ -4397,7 +4511,54 @@ function initializeFoliateToolbar(container, pack) {
     zoomResetButton,
     zoomCurrentLabel,
     zoomValue,
-    view: null
+    view: null,
+    bookId: null
+  };
+
+  const handlePageSubmit = () => {
+    if (!toolbarState.view || !toolbarState.pageInput) {
+      return;
+    }
+    const rawValue = toolbarState.pageInput.value.trim();
+    if (!rawValue) {
+      return;
+    }
+    const parsed = parseInt(rawValue, 10);
+    if (Number.isNaN(parsed)) {
+      return;
+    }
+    const pageState = toolbarState.bookId ? getPreviewPageState(toolbarState.bookId) : null;
+    const totalPages = pageState && pageState.total > 0 ? pageState.total : null;
+    let targetPage = parsed;
+    if (totalPages) {
+      targetPage = Math.min(Math.max(parsed, 1), totalPages);
+    } else {
+      targetPage = Math.max(parsed, 1);
+    }
+    toolbarState.pageInput.value = `${targetPage}`;
+    const view = toolbarState.view;
+    if (!view) {
+      return;
+    }
+    if (typeof view.goToFraction === 'function' && totalPages) {
+      if (totalPages === 1) {
+        view.goToFraction(0).catch((error) =>
+          console.warn('Failed to jump to Foliate page', error)
+        );
+        return;
+      }
+      const denominator = Math.max(totalPages - 1, 1);
+      const fraction = Math.max(0, Math.min(1, (targetPage - 1) / denominator));
+      view.goToFraction(fraction).catch((error) =>
+        console.warn('Failed to jump to Foliate page', error)
+      );
+      return;
+    }
+    if (typeof view.goTo === 'function') {
+      view
+        .goTo({ index: Math.max(targetPage - 1, 0) })
+        .catch((error) => console.warn('Failed to jump to Foliate page', error));
+    }
   };
 
   prevButton.addEventListener('click', () => {
@@ -4416,6 +4577,14 @@ function initializeFoliateToolbar(container, pack) {
     toolbarState.view
       .next()
       .catch((error) => console.warn('Failed to navigate to next Foliate page', error));
+  });
+
+  pageGoButton.addEventListener('click', handlePageSubmit);
+  pageInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handlePageSubmit();
+    }
   });
 
   flowSelect.addEventListener('change', (event) => {
@@ -4871,21 +5040,8 @@ function createPreviewSection(pack, book, previewState) {
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-modal', 'true');
   }
-  panel.appendChild(createElement('h3', { text: pack.previewPanel.title }));
-  panel.appendChild(
-    createElement('p', { className: 'preview-summary', text: getBookSummaryText(book) })
-  );
-
   const asset = ensurePreviewAsset(book);
   const controls = createElement('div', { className: 'preview-controls foliate-active' });
-  controls.appendChild(
-    createElement('p', {
-      className: 'preview-hint',
-      text:
-        pack.previewPanel.foliateHint ||
-        'Use the Foliate toolbar to adjust layout, zoom, and navigation.'
-    })
-  );
   const fullscreenToggle = createElement('button', {
     text: previewState.fullscreen
       ? pack.previewPanel.exitFullscreen
@@ -4970,17 +5126,30 @@ function renderPreviewPage(pack) {
   header.appendChild(headerActions);
   page.appendChild(header);
 
-  const fileDetails = renderPreviewFileDetails(pack, book);
-  if (fileDetails) {
-    page.appendChild(fileDetails);
-  }
-
   const layout = createElement('div', { className: 'preview-layout' });
   const mainColumn = createElement('div', { className: 'preview-main' });
   mainColumn.appendChild(createPreviewSection(pack, book, previewState));
   layout.appendChild(mainColumn);
 
   const sideColumn = createElement('aside', { className: 'preview-side' });
+  const sideIntro = createElement('div', { className: 'preview-side-intro' });
+  sideIntro.appendChild(createElement('h3', { text: pack.previewPanel.title }));
+  sideIntro.appendChild(
+    createElement('p', { className: 'preview-summary', text: getBookSummaryText(book) })
+  );
+  const fileDetails = renderPreviewFileDetails(pack, book);
+  if (fileDetails) {
+    sideIntro.appendChild(fileDetails);
+  }
+  sideIntro.appendChild(
+    createElement('p', {
+      className: 'preview-hint preview-side-hint',
+      text:
+        pack.previewPanel.foliateHint ||
+        'Use the Foliate toolbar to adjust layout, zoom, and navigation.'
+    })
+  );
+  sideColumn.appendChild(sideIntro);
   sideColumn.appendChild(renderEditableCover(book, pack));
   sideColumn.appendChild(renderMetadataCard(pack, book));
   layout.appendChild(sideColumn);
