@@ -303,37 +303,44 @@ body {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 960px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
 }
 
 .dashboard-card {
   background: #ffffff;
-  border-radius: 24px;
+  border-radius: 18px;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
-  padding: 24px;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .dashboard-card h3 {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: #64748b;
 }
 
 .dashboard-card strong {
-  font-size: 2.2rem;
+  font-size: 1.8rem;
   color: #0f172a;
 }
 
 .dashboard-card p {
   margin: 0;
   color: #475569;
+  font-size: 0.85rem;
 }
 
 
@@ -1231,7 +1238,7 @@ body {
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.06);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -1239,15 +1246,41 @@ body {
   width: 100%;
 }
 
-.book-card > .book-cover.small {
-  width: min(25%, 88px);
-  margin: 0 auto 8px;
-  align-self: center;
-}
-
 .book-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 24px 40px rgba(15, 23, 42, 0.08);
+}
+
+.book-card-body {
+  display: flex;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.book-card-text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.book-card-cover {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+}
+
+.book-card-cover .book-cover.small {
+  width: 120px;
+  margin: 0;
+}
+
+.book-card-cover .book-cover.small img {
+  object-fit: cover;
+}
+
+.book-card-cover .book-cover.small .cover-placeholder-text {
+  padding: 12px;
 }
 
 .book-card-header {
@@ -1273,6 +1306,26 @@ body {
   color: #1f2937;
   font-size: 0.95rem;
   line-height: 1.5;
+}
+
+.book-directory {
+  margin: 0;
+  color: #1f2937;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 768px) {
+  .book-card-body {
+    flex-direction: column-reverse;
+  }
+
+  .book-card-cover {
+    justify-content: center;
+  }
+
+  .book-card-cover .book-cover.small {
+    width: min(55%, 160px);
+  }
 }
 
 .progress-bar {
