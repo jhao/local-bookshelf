@@ -225,67 +225,13 @@ const AI_PROVIDERS = [
   { key: 'ollama', label: { en: 'Ollama (local)', zh: 'Ollama（本地）' } }
 ];
 
-const METADATA_SAMPLES = [
-  {
-    author: 'Liu Cixin',
-    classification: 'I2067',
-    year: 2008,
-    summary: {
-      en: 'Award-winning science fiction exploring cosmic sociology and humanity\'s future.',
-      zh: '获奖科幻作品，聚焦宇宙社会学与人类命运。'
-    },
-    colors: ['#0f172a', '#38bdf8']
-  },
-  {
-    author: 'Rachel Carson',
-    classification: 'X4',
-    year: 1962,
-    summary: {
-      en: 'Seminal environmental writing that reshaped ecological awareness.',
-      zh: '奠定现代生态意识的开创性著作。'
-    },
-    colors: ['#155e75', '#67e8f9']
-  },
-  {
-    author: 'Jane Jacobs',
-    classification: 'TU201',
-    year: 1961,
-    summary: {
-      en: 'Urban design classic unpacking the life of vibrant neighbourhoods.',
-      zh: '城市设计经典，解析街区的活力之源。'
-    },
-    colors: ['#1f2937', '#f97316']
-  },
-  {
-    author: 'Ada Lovelace',
-    classification: 'TB472',
-    year: 1843,
-    summary: {
-      en: 'Historical notes on computation and creative mathematical thinking.',
-      zh: '记录计算思想与创意数学的历史笔记。'
-    },
-    colors: ['#4c1d95', '#a855f7']
-  },
-  {
-    author: 'Wang Anyi',
-    classification: 'I267',
-    year: 2000,
-    summary: {
-      en: 'Lyrical modern Chinese literature capturing urban memory.',
-      zh: '抒情的当代文学，捕捉城市与记忆。'
-    },
-    colors: ['#7c2d12', '#f59e0b']
-  },
-  {
-    author: 'Elinor Ostrom',
-    classification: 'F49',
-    year: 1990,
-    summary: {
-      en: 'Groundbreaking governance research on shared resources and cooperation.',
-      zh: '关于共享资源治理的开创性研究，强调协作。'
-    },
-    colors: ['#0f766e', '#34d399']
-  }
+const METADATA_COLOR_SAMPLES = [
+  ['#0f172a', '#38bdf8'],
+  ['#155e75', '#67e8f9'],
+  ['#1f2937', '#f97316'],
+  ['#4c1d95', '#a855f7'],
+  ['#7c2d12', '#f59e0b'],
+  ['#0f766e', '#34d399']
 ];
 
 const initialBookmarks = Object.values(initialCollectionBooks)
@@ -1146,21 +1092,175 @@ function saveDirectoryEditor() {
   }
 }
 
-function generateMetadataForBook(book, index) {
-  const sample = METADATA_SAMPLES[index % METADATA_SAMPLES.length] || METADATA_SAMPLES[0];
-  const localeKey = getLocaleKey();
-  const classificationPool = classificationOptions.filter((value) => value !== 'unknown');
-  const fallbackClassification =
-    classificationPool[index % Math.max(classificationPool.length, 1)] || 'unknown';
-  const classification =
-    sample?.classification && classificationPool.includes(sample.classification)
-      ? sample.classification
-      : fallbackClassification;
-  const author = sample?.author || formatAuthorText(book.author);
-  const year = sample?.year || new Date().getFullYear();
-  const summary = sample?.summary?.[localeKey] || sample?.summary?.en || '';
-  const coverUrl = createCoverDataUrl(book.title, author, sample?.colors);
-  return { author, classification, year, summary, coverUrl };
+function normalizeIsbn(value) {
+  if (!value) {
+    return '';
+  }
+  return String(value)
+    .replace(/[^0-9Xx]/g, '')
+    .toUpperCase();
+}
+
+async function fetchOpenLibraryWork(workKey) {
+  if (!workKey || typeof fetch !== 'function') {
+    return null;
+  }
+  try {
+    const response = await fetch(`https://openlibrary.org${workKey}.json`, {
+      headers: { Accept: 'application/json' }
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const payload = await response.json();
+    const description = payload?.description;
+    if (typeof description === 'string') {
+      return description.trim();
+    }
+    if (description && typeof description === 'object' && typeof description.value === 'string') {
+      return description.value.trim();
+    }
+    if (typeof payload?.first_sentence === 'string') {
+      return payload.first_sentence.trim();
+    }
+    if (
+      payload?.first_sentence &&
+      typeof payload.first_sentence === 'object' &&
+      typeof payload.first_sentence.value === 'string'
+    ) {
+      return payload.first_sentence.value.trim();
+    }
+    return '';
+  } catch (error) {
+    console.warn('Failed to read Open Library work metadata', workKey, error);
+    return null;
+  }
+}
+
+async function generateMetadataForBook(book, index) {
+  if (!book) {
+    const error = new Error('Missing book context');
+    error.code = 'invalid_input';
+    throw error;
+  }
+
+  if (typeof fetch !== 'function') {
+    const error = new Error('Fetch API is not available in this environment');
+    error.code = 'unavailable';
+    throw error;
+  }
+
+  const colorPalette = METADATA_COLOR_SAMPLES[index % METADATA_COLOR_SAMPLES.length] || [];
+  const fallbackAuthor = formatAuthorText(book.author);
+  const fallbackClassification = book.classification || 'unknown';
+  const fallbackYear = book.publicationYear || new Date().getFullYear();
+  const fallbackCover = book.coverUrl || createCoverDataUrl(book.title, fallbackAuthor, colorPalette);
+
+  const normalizedIsbn = normalizeIsbn(book.isbn);
+  const query = new URLSearchParams();
+  if (normalizedIsbn) {
+    query.set('isbn', normalizedIsbn);
+  }
+  if (book?.title) {
+    query.set('title', book.title);
+  }
+  const formattedAuthor = formatAuthorText(book?.author);
+  if (formattedAuthor) {
+    query.set('author', formattedAuthor);
+  }
+  query.set('limit', '5');
+
+  const url = `https://openlibrary.org/search.json?${query.toString()}`;
+  let response;
+  try {
+    response = await fetch(url, { headers: { Accept: 'application/json' } });
+  } catch (cause) {
+    const error = new Error('Network error while contacting Open Library');
+    error.code = 'network_error';
+    error.cause = cause;
+    throw error;
+  }
+
+  if (!response.ok) {
+    const error = new Error(`Open Library search failed with status ${response.status}`);
+    error.code = response.status === 404 ? 'not_found' : 'request_failed';
+    error.status = response.status;
+    throw error;
+  }
+
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (cause) {
+    const error = new Error('Unable to parse Open Library response');
+    error.code = 'invalid_response';
+    error.cause = cause;
+    throw error;
+  }
+
+  const docs = Array.isArray(payload?.docs) ? payload.docs : [];
+  if (!docs.length) {
+    const error = new Error('No matching records found for the provided metadata');
+    error.code = 'not_found';
+    throw error;
+  }
+
+  const normalizedTitle = (book?.title || '').trim().toLowerCase();
+  let match = docs[0];
+  if (normalizedTitle) {
+    const exactMatch = docs.find((doc) => (doc.title || '').trim().toLowerCase() === normalizedTitle);
+    if (exactMatch) {
+      match = exactMatch;
+    }
+  }
+  if (normalizedIsbn) {
+    const isbnMatch = docs.find((doc) =>
+      Array.isArray(doc.isbn) && doc.isbn.some((value) => normalizeIsbn(value) === normalizedIsbn)
+    );
+    if (isbnMatch) {
+      match = isbnMatch;
+    }
+  }
+
+  const metadata = {
+    author:
+      (Array.isArray(match?.author_name) && match.author_name.length ? match.author_name[0] : '') ||
+      fallbackAuthor,
+    classification:
+      (Array.isArray(match?.ddc) && match.ddc.length ? match.ddc[0] : '') || fallbackClassification,
+    year: match?.first_publish_year || fallbackYear,
+    summary: '',
+    coverUrl: match?.cover_i
+      ? `https://covers.openlibrary.org/b/id/${match.cover_i}-L.jpg`
+      : fallbackCover
+  };
+
+  if (!metadata.author) {
+    const name = Array.isArray(match?.author_name) ? match.author_name.filter(Boolean).join(', ') : '';
+    metadata.author = name || fallbackAuthor;
+  }
+
+  if (!metadata.classification && Array.isArray(match?.subject_facet) && match.subject_facet.length) {
+    metadata.classification = match.subject_facet[0];
+  }
+
+  if (Array.isArray(match?.publish_year) && match.publish_year.length && !match.first_publish_year) {
+    const sortedYears = [...match.publish_year].sort();
+    metadata.year = sortedYears[0] || metadata.year;
+  }
+
+  if (!metadata.coverUrl && fallbackCover) {
+    metadata.coverUrl = fallbackCover;
+  }
+
+  if (match?.key) {
+    const description = await fetchOpenLibraryWork(match.key);
+    if (description) {
+      metadata.summary = description;
+    }
+  }
+
+  return metadata;
 }
 
 function refreshMetadata(collectionId, bookIds = []) {
@@ -1222,7 +1322,9 @@ function refreshMetadata(collectionId, bookIds = []) {
     job.status = 'completed';
     job.progress = 100;
     job.scannedFiles = targets.length;
-    job.completedUpdates = job.completedUpdates || targets.length;
+    const completedCount = targets.filter((item) => item.enrichment === 'complete').length;
+    job.completedUpdates =
+      typeof job.completedUpdates === 'number' ? job.completedUpdates : completedCount;
     job.updatedAt = new Date();
     updateJobOverlays(job);
     if (state.activeMetadata && state.activeMetadata.jobId === job.id) {
@@ -1269,7 +1371,7 @@ function refreshMetadata(collectionId, bookIds = []) {
 
   controller.finish = { success: finalizeSuccess, cancel: finalizeCancel };
 
-  const step = (index) => {
+  const step = async (index) => {
     if (controller.cancelled || job.status !== 'running') {
       if (controller.cancelled && controller.finish?.cancel) {
         controller.finish.cancel();
@@ -1289,35 +1391,69 @@ function refreshMetadata(collectionId, bookIds = []) {
         : `Refreshing ${book.title} via ${providerName}`,
       job.id
     );
-    const metadata = generateMetadataForBook(book, index);
-    book.author = metadata.author;
-    book.classification = metadata.classification;
-    book.publicationYear = metadata.year;
-    book.coverUrl = metadata.coverUrl;
+    let metadata = null;
+    let metadataError = null;
+    try {
+      metadata = await generateMetadataForBook(book, index);
+    } catch (error) {
+      metadataError = error;
+      console.warn('Metadata refresh failed for book', book?.title, error);
+    }
+
     const baseSummary = book._originalSummary || getBookSummaryText(book);
     if (!book._originalSummary && baseSummary) {
       book._originalSummary = baseSummary;
     }
-    const summaryPieces = [metadata.summary, baseSummary].filter(Boolean);
-    const combinedSummary = summaryPieces.join('\n').trim();
-    book.summary = combinedSummary || baseSummary || metadata.summary;
-    book.enrichment = 'complete';
-    book.metadataUpdatedAt = new Date().toISOString();
-    job.completedUpdates = (job.completedUpdates || 0) + 1;
-    const classificationLabel = getClassificationLabel(book.classification || 'unknown');
-    const yearLabel = formatPublicationYearText(book.publicationYear);
-    pushMetadataLog(
-      state.locale === 'zh'
-        ? `《${book.title}》更新完成：作者 ${metadata.author}，分类 ${classificationLabel}，年份 ${yearLabel}，封面 ${metadata.coverUrl ? '已生成' : '暂无'}`
-        : `${book.title} updated: author ${metadata.author}, classification ${classificationLabel}, year ${yearLabel}, cover ${metadata.coverUrl ? 'updated' : 'pending'}.`,
-      job.id
-    );
+
+    if (metadata) {
+      book.author = metadata.author || book.author;
+      book.classification = metadata.classification || book.classification || 'unknown';
+      book.publicationYear = metadata.year || book.publicationYear;
+      if (metadata.coverUrl) {
+        book.coverUrl = metadata.coverUrl;
+      }
+      const summaryPieces = [metadata.summary, baseSummary].filter(Boolean);
+      const combinedSummary = summaryPieces.join('\n').trim();
+      book.summary = combinedSummary || baseSummary || metadata.summary;
+      book.enrichment = 'complete';
+      book.metadataUpdatedAt = new Date().toISOString();
+      job.completedUpdates = (job.completedUpdates || 0) + 1;
+      const classificationLabel = getClassificationLabel(book.classification || 'unknown');
+      const yearLabel = formatPublicationYearText(book.publicationYear);
+      pushMetadataLog(
+        state.locale === 'zh'
+          ? `《${book.title}》更新完成：作者 ${metadata.author}，分类 ${classificationLabel}，年份 ${yearLabel}，封面 ${metadata.coverUrl ? '已更新' : '暂无'}`
+          : `${book.title} updated: author ${metadata.author}, classification ${classificationLabel}, year ${yearLabel}, cover ${metadata.coverUrl ? 'updated' : 'pending'}.`,
+        job.id
+      );
+    } else {
+      book.enrichment = 'failed';
+      book.metadataUpdatedAt = new Date().toISOString();
+      const notFound = metadataError?.code === 'not_found';
+      const messageZh = notFound
+        ? `未在联网数据源找到《${book.title}》的匹配信息`
+        : `刷新《${book.title}》元数据失败：${metadataError?.message || '未知错误'}`;
+      const messageEn = notFound
+        ? `No online metadata found for ${book.title}`
+        : `Failed to refresh metadata for ${book.title}: ${metadataError?.message || 'Unknown error'}`;
+      const failureMessage = state.locale === 'zh' ? messageZh : messageEn;
+      pushMetadataLog(failureMessage, job.id);
+      const summarySuffix = state.locale === 'zh' ? '（元数据未能从网络加载）' : '(Metadata could not be loaded from the internet)';
+      const combined = baseSummary ? `${baseSummary}\n\n${failureMessage}` : `${failureMessage} ${summarySuffix}`;
+      book.summary = combined.trim();
+    }
     job.scannedFiles = index + 1;
     job.progress = Math.round(((index + 1) / Math.max(targets.length, 1)) * 100);
     job.updatedAt = new Date();
     updateJobOverlays(job);
     renderApp();
-    controller.timeoutId = setTimeout(() => step(index + 1), 420 + Math.random() * 300);
+    if (controller.cancelled || job.status !== 'running') {
+      if (controller.cancelled && controller.finish?.cancel) {
+        controller.finish.cancel();
+      }
+      return;
+    }
+    controller.timeoutId = setTimeout(() => step(index + 1), 260 + Math.random() * 260);
   };
 
   controller.timeoutId = setTimeout(() => step(0), 320);
